@@ -27,6 +27,35 @@ type WorkflowGraph = Record<string, unknown> & {
   links?: unknown;
 };
 
+function stripIgnoredNodes(workflow: WorkflowGraph) {
+  const nodes: WorkflowNode[] = Array.isArray(workflow?.nodes)
+    ? workflow.nodes
+    : [];
+  const links: unknown[] = Array.isArray(workflow?.links) ? workflow.links : [];
+
+const ignoredTypes = new Set(["note", "markdownnote"]);
+  const keptNodes = nodes.filter((node) => {
+    const typeLower = String(node?.type ?? "").toLowerCase();
+    return !ignoredTypes.has(typeLower);
+  });
+  const removedIds = new Set(
+    nodes
+      .filter((node) => !keptNodes.includes(node))
+      .map((node) => String(node?.id ?? "")),
+  );
+
+  const keptLinks = links.filter((link) => {
+    if (!Array.isArray(link) || link.length < 5) return false;
+    const [, fromNodeRaw, , toNodeRaw] = link as [unknown, unknown, unknown, unknown];
+    const fromId = String(fromNodeRaw);
+    const toId = String(toNodeRaw);
+    return !removedIds.has(fromId) && !removedIds.has(toId);
+  });
+
+  workflow.nodes = keptNodes;
+  workflow.links = keptLinks;
+}
+
 function ensureClassTypes(workflow: WorkflowGraph) {
   const nodes: WorkflowNode[] = Array.isArray(workflow?.nodes)
     ? workflow.nodes
@@ -52,6 +81,10 @@ const widgetInputHints: Record<string, string[]> = {
   LoadImage: ["image", "type"],
   UNETLoader: ["unet_name", "type"],
   SaveImage: ["filename"],
+  CLIPLoader: ["clip_name", "type"],
+  TextEncodeQwenImageEdit: ["prompt"],
+  ModelSamplingAuraFlow: ["shift"],
+  CFGNorm: ["strength"],
 };
 
 function getWidgetNames(type?: string) {
@@ -286,6 +319,42 @@ function buildPromptGraph(workflow: WorkflowGraph) {
       widgetValues[0] !== undefined
     ) {
       promptNode.inputs["text"] = widgetValues[0];
+    }
+
+    // Custom node prompt mapping
+    if (
+      typeExact === "TextEncodeQwenImageEdit" &&
+      widgetValues[0] !== undefined &&
+      promptNode.inputs["prompt"] === undefined
+    ) {
+      promptNode.inputs["prompt"] = widgetValues[0];
+    }
+
+    if (
+      typeExact === "CLIPLoader" &&
+      widgetValues[0] !== undefined &&
+      promptNode.inputs["clip_name"] === undefined
+    ) {
+      promptNode.inputs["clip_name"] = widgetValues[0];
+      if (widgetValues[1] !== undefined && promptNode.inputs["type"] === undefined) {
+        promptNode.inputs["type"] = widgetValues[1];
+      }
+    }
+
+    if (
+      typeExact === "ModelSamplingAuraFlow" &&
+      widgetValues[0] !== undefined &&
+      promptNode.inputs["shift"] === undefined
+    ) {
+      promptNode.inputs["shift"] = widgetValues[0];
+    }
+
+    if (
+      typeExact === "CFGNorm" &&
+      widgetValues[0] !== undefined &&
+      promptNode.inputs["strength"] === undefined
+    ) {
+      promptNode.inputs["strength"] = widgetValues[0];
     }
 
     // Any remaining widget values -> valueX
@@ -592,6 +661,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    stripIgnoredNodes(workingCopy);
     setPromptTexts(workingCopy, positivePrompt, negativePrompt);
     ensureClassTypes(workingCopy);
     const promptGraph = buildPromptGraph(workingCopy);

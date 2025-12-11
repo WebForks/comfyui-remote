@@ -78,15 +78,96 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await persistWorkflows(workflows);
+    const existing = await readStoredWorkflows();
+    const mergedMap = new Map<string, (typeof workflows)[number]>();
 
-    return NextResponse.json({ workflows, saved: true });
+    // Keep existing first to avoid accidental overwrite when IDs collide
+    existing.forEach((wf) => mergedMap.set(wf.id, wf));
+    workflows.forEach((wf) => {
+      let candidateId = wf.id;
+      let counter = 1;
+      while (mergedMap.has(candidateId)) {
+        candidateId = `${wf.id}-${counter++}`;
+      }
+      mergedMap.set(candidateId, { ...wf, id: candidateId });
+    });
+
+    const merged = Array.from(mergedMap.values());
+
+    await persistWorkflows(merged);
+
+    return NextResponse.json({ workflows: merged, saved: true });
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
         : "Failed to save the uploaded workflows.";
 
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  if (!(await readIsAuthenticated())) {
+    return NextResponse.json(
+      { error: "Not authenticated" },
+      { status: 401, statusText: "Unauthorized" },
+    );
+  }
+
+  try {
+    const body = (await req.json()) as { id?: string; name?: string };
+    const id = body.id?.trim();
+    const name = body.name?.trim();
+
+    if (!id || !name) {
+      return NextResponse.json(
+        { error: "Both id and name are required." },
+        { status: 400 },
+      );
+    }
+
+    const workflows = await readStoredWorkflows();
+    const updated = workflows.map((wf) =>
+      wf.id === id ? { ...wf, name } : wf,
+    );
+
+    await persistWorkflows(updated);
+    return NextResponse.json({ workflows: updated, updated: id });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to rename workflow.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  if (!(await readIsAuthenticated())) {
+    return NextResponse.json(
+      { error: "Not authenticated" },
+      { status: 401, statusText: "Unauthorized" },
+    );
+  }
+
+  try {
+    const url = new URL(req.url);
+    const id = url.searchParams.get("id")?.trim();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Missing id to delete." },
+        { status: 400 },
+      );
+    }
+
+    const workflows = await readStoredWorkflows();
+    const filtered = workflows.filter((wf) => wf.id !== id);
+
+    await persistWorkflows(filtered);
+    return NextResponse.json({ workflows: filtered, deleted: id });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to delete workflow.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

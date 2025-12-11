@@ -11,6 +11,7 @@ import {
   useRef,
 } from "react";
 import { useFormStatus } from "react-dom";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { login, logout, type AuthState } from "@/app/actions/auth";
@@ -36,11 +37,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Home, Moon, Settings, Sun } from "lucide-react";
 
 type RemoteAppProps = {
   authenticated: boolean;
   defaultBaseUrl?: string;
   passwordConfigured: boolean;
+  variant?: "dashboard" | "settings";
 };
 
 type WorkflowSummary = {
@@ -93,6 +96,7 @@ export function RemoteApp({
   authenticated,
   defaultBaseUrl,
   passwordConfigured,
+  variant = "dashboard",
 }: RemoteAppProps) {
   const router = useRouter();
   const [state, formAction] = useActionState<AuthState, FormData>(
@@ -134,6 +138,7 @@ export function RemoteApp({
       passwordConfigured={passwordConfigured}
       isLoggingOut={isLoggingOut}
       onLogout={handleLogout}
+      variant={variant}
     />
   );
 }
@@ -163,6 +168,107 @@ function SummaryBlock({
         </ul>
       )}
     </div>
+  );
+}
+
+function WorkflowRow({
+  workflow,
+  isSelected,
+  onSelect,
+  onRename,
+  onDelete,
+  renamingId,
+  onStartRename,
+  onCancelRename,
+  renameValue,
+  setRenameValue,
+}: {
+  workflow: WorkflowOption;
+  isSelected: boolean;
+  onSelect: () => void;
+  onRename: (name: string) => void | Promise<void>;
+  onDelete: () => void | Promise<void>;
+  renamingId: string | null;
+  onStartRename: (id: string, current: string) => void;
+  onCancelRename: () => void;
+  renameValue: string;
+  setRenameValue: (val: string) => void;
+}) {
+  const isRenaming = renamingId === workflow.id;
+
+  return (
+    <tr
+      className={`border-b border-border/50 hover:bg-muted/40 ${
+        isSelected ? "bg-primary/5" : ""
+      }`}
+      onClick={onSelect}
+    >
+      <td className="px-3 py-2 align-middle">
+        {isRenaming ? (
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            autoFocus
+          />
+        ) : (
+          <span className="font-medium text-foreground">{workflow.name}</span>
+        )}
+      </td>
+      <td className="px-3 py-2 align-middle text-muted-foreground break-all">
+        {workflow.id}
+      </td>
+      <td className="px-3 py-2 align-middle">
+        <div className="flex gap-2">
+          {isRenaming ? (
+            <>
+              <Button
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRename(renameValue);
+                }}
+              >
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCancelRename();
+                }}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStartRename(workflow.id, workflow.name);
+                }}
+              >
+                Rename
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+              >
+                Delete
+              </Button>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -239,12 +345,15 @@ function Dashboard({
   passwordConfigured,
   isLoggingOut,
   onLogout,
+  variant = "dashboard",
 }: {
   defaultBaseUrl?: string;
   passwordConfigured: boolean;
   isLoggingOut: boolean;
   onLogout: () => void;
+  variant?: "dashboard" | "settings";
 }) {
+  const isSettings = variant === "settings";
   const [apiBase, setApiBase] = useState(() => defaultBaseUrl || "");
   const [workflows, setWorkflows] = useState<WorkflowOption[]>([]);
   const [selectedWorkflow, setSelectedWorkflow] = useState("");
@@ -266,10 +375,17 @@ function Dashboard({
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [runHistory, setRunHistory] = useState<unknown | null>(null);
   const lastWorkflowRef = useRef<string | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [showDebug, setShowDebug] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "detail">("list");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState<string>("");
 
   useEffect(() => {
     const savedBase = localStorage.getItem(STORAGE_KEYS.apiBase);
     const savedWorkflow = localStorage.getItem(STORAGE_KEYS.workflow);
+    const savedTheme = localStorage.getItem("comfyui-theme");
+    const savedDebug = localStorage.getItem("comfyui-show-debug");
 
     if (savedBase) {
       setApiBase(savedBase);
@@ -281,8 +397,30 @@ function Dashboard({
       setSelectedWorkflow(savedWorkflow);
     }
 
+    if (savedTheme === "dark" || savedTheme === "light") {
+      setTheme(savedTheme);
+    } else if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
+      setTheme("dark");
+    }
+
+    setShowDebug(savedDebug === "true");
+
     setReady(true);
   }, [defaultBaseUrl]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+    localStorage.setItem("comfyui-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("comfyui-show-debug", showDebug ? "true" : "false");
+  }, [showDebug]);
 
   const connectionBadge = useMemo(() => {
     if (status === "connected") {
@@ -608,12 +746,68 @@ function Dashboard({
     (item) => item.id === selectedWorkflow,
   )?.path;
 
+  const handleRenameWorkflow = useCallback(
+    async (id: string, name: string) => {
+      if (!name.trim()) return;
+      setIsFetching(true);
+      try {
+        const response = await fetch("/api/workflows", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, name: name.trim() }),
+        });
+        const body = (await response.json()) as { workflows?: WorkflowOption[]; error?: string };
+        if (!response.ok) throw new Error(body.error || "Rename failed.");
+        const list = body.workflows || [];
+        setWorkflows(list);
+        if (!list.find((wf) => wf.id === selectedWorkflow)) {
+          setSelectedWorkflow(list[0]?.id || "");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Rename failed.");
+      } finally {
+        setIsFetching(false);
+        setRenamingId(null);
+        setRenameValue("");
+      }
+    },
+    [selectedWorkflow],
+  );
+
+  const handleDeleteWorkflow = useCallback(
+    async (id: string) => {
+      setIsFetching(true);
+      try {
+        const response = await fetch(`/api/workflows?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        const body = (await response.json()) as { workflows?: WorkflowOption[]; error?: string };
+        if (!response.ok) throw new Error(body.error || "Delete failed.");
+        const list = body.workflows || [];
+        setWorkflows(list);
+        if (selectedWorkflow === id) {
+          const nextId = list[0]?.id || "";
+          setSelectedWorkflow(nextId);
+          localStorage.setItem(STORAGE_KEYS.workflow, nextId);
+          setViewMode("list");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Delete failed.");
+      } finally {
+        setIsFetching(false);
+      }
+    },
+    [selectedWorkflow],
+  );
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-semibold">ComfyUI Remote</h1>
+            <Link href="/" className="text-3xl font-semibold hover:underline">
+              ComfyUI Remote
+            </Link>
             {connectionBadge}
           </div>
           <p className="text-sm text-muted-foreground">
@@ -626,351 +820,321 @@ function Dashboard({
             </Badge>
           )}
         </div>
-        <Button
-          variant="outline"
-          onClick={onLogout}
-          disabled={isLoggingOut}
-          className="self-start"
-        >
-          {isLoggingOut ? "Signing out..." : "Sign out"}
-        </Button>
+        <div className="flex items-center gap-2 self-start">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9"
+            onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+          {variant === "dashboard" ? (
+            <Button asChild variant="outline" size="icon" className="h-9 w-9">
+              <Link href="/settings" aria-label="Open settings">
+                <Settings className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild variant="outline" size="icon" className="h-9 w-9">
+              <Link href="/" aria-label="Back to dashboard">
+                <Home className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={onLogout}
+            disabled={isLoggingOut}
+            className="self-start"
+          >
+            {isLoggingOut ? "Signing out..." : "Sign out"}
+          </Button>
+        </div>
       </header>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>ComfyUI connection</CardTitle>
-            <CardDescription>
-              Provide the base URL where ComfyUI is reachable from this server.
-              Example: http://YOUR-DESKTOP-IP:8188. This will be used when
-              running prompts later.
-            </CardDescription>
-          </div>
-          {lastUpdated && (
-            <div className="text-xs text-muted-foreground">
-              Updated {lastUpdated.toLocaleTimeString()}
-            </div>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-            <div className="space-y-2">
-              <Label htmlFor="apiBase">ComfyUI API URL</Label>
-              <Input
-                id="apiBase"
-                value={apiBase}
-                onChange={(event) => setApiBase(event.target.value)}
-                placeholder="http://desktop-ip:8188"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                type="button"
-                onClick={() => setApiBase(defaultBaseUrl || "")}
-                disabled={isFetching}
-              >
-                Reset
-              </Button>
-              <Button
-                type="button"
-                onClick={() => fetchWorkflows()}
-                disabled={isFetching}
-              >
-                {isFetching ? "Loading..." : "Reload saved"}
-              </Button>
-            </div>
-          </div>
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertTitle>Could not connect</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Workflows</CardTitle>
-            <CardDescription>
-              Import your workflow JSON and store it on this server. We&apos;ll
-              use this selection as the base for editing.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-              <div className="space-y-2">
-                <Label htmlFor="workflowFile">Import workflow JSON</Label>
-                <Input
-                  id="workflowFile"
-                  type="file"
-                  accept="application/json"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    setImportFile(file);
-                    setImportMessage(null);
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Uploads are saved on the server (overwrites previous list).
-                  Accepted: a single workflow object, an array, or an object
-                  with a <code>workflows</code> array.
-                </p>
+      {isSettings ? (
+        <>
+          <Card>
+            <CardHeader className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle>ComfyUI connection</CardTitle>
+                <CardDescription>
+                  Provide the base URL where ComfyUI is reachable from this server.
+                  Example: http://YOUR-DESKTOP-IP:8188. This will be used when
+                  running prompts later.
+                </CardDescription>
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleImport}
-                disabled={!importFile || isImporting}
-              >
-                {isImporting ? "Saving..." : "Upload & save"}
-              </Button>
-            </div>
-
-            {importMessage && (
-              <Alert>
-                <AlertTitle>Import complete</AlertTitle>
-                <AlertDescription>{importMessage}</AlertDescription>
-              </Alert>
-            )}
-
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-              <div className="space-y-2">
-                <Label htmlFor="workflow">Available workflows</Label>
-                <Select
-                  value={selectedWorkflow}
-                  onValueChange={handleWorkflowChange}
-                  disabled={isFetching || workflows.length === 0}
-                >
-                  <SelectTrigger id="workflow" className="w-full">
-                    <SelectValue
-                      placeholder={
-                        isFetching ? "Loading..." : "No workflows loaded yet"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {workflows.map((flow) => (
-                        <SelectItem key={flow.id} value={flow.id}>
-                          {flow.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Pick any saved workflow to load its summary below. Click
-                  &ldquo;Load saved workflows&rdquo; to sync with the server.
-                </p>
-                {workflowHint && (
-                  <p className="text-xs text-muted-foreground">
-                    Source: {workflowHint}
-                  </p>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => fetchWorkflows()}
-                disabled={isFetching}
-              >
-                {isFetching ? "Loading..." : "Load saved workflows"}
-              </Button>
-            </div>
-            {!workflows.length && status === "connected" && (
-              <p className="text-sm text-muted-foreground">
-                No workflows are saved yet. Import a JSON file to populate this
-                list.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="h-full">
-          <CardHeader>
-            <CardTitle>Session</CardTitle>
-            <CardDescription>Quick diagnostics for this UI.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <div className="flex items-center justify-between">
-              <span>API base</span>
-              <span className="max-w-[200px] truncate text-right text-foreground">
-                {apiBase || "Not set"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Workflow</span>
-              <span className="max-w-[200px] truncate text-right text-foreground">
-                {selectedWorkflow || "Not selected"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Password</span>
-              <Badge variant="outline">
-                {passwordConfigured ? "Configured" : "Default in use"}
-              </Badge>
-            </div>
-          </CardContent>
-          <CardFooter className="text-xs text-muted-foreground">
-            Add SSH port forwarding or a VPN if your desktop is not publicly
-            routable.
-          </CardFooter>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Run workflow</CardTitle>
-            <CardDescription>
-              Set prompts, (optionally) upload an input image, then run against
-              your ComfyUI API.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="positivePrompt">Positive prompt</Label>
-                <Textarea
-                  id="positivePrompt"
-                  value={positivePrompt}
-                  onChange={(event) => setPositivePrompt(event.target.value)}
-                  placeholder="Describe what you want."
-                  className="min-h-[120px]"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="negativePrompt">Negative prompt</Label>
-                <Textarea
-                  id="negativePrompt"
-                  value={negativePrompt}
-                  onChange={(event) => setNegativePrompt(event.target.value)}
-                  placeholder="Things to avoid."
-                  className="min-h-[120px]"
-                />
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-              <div className="space-y-2">
-                <Label htmlFor="runImage">Load image (optional)</Label>
-                <Input
-                  id="runImage"
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    setRunImageFile(file);
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">
-                  If your workflow uses a LoadImage node, this replaces its
-                  file.
-                </p>
-                {runImagePreview && (
-                  <div className="overflow-hidden rounded border border-border/60 bg-card/40">
-                    <img
-                      src={runImagePreview}
-                      alt="Selected input preview"
-                      className="w-full max-h-72 object-contain bg-muted"
-                    />
-                  </div>
-                )}
-              </div>
-              <Button
-                type="button"
-                onClick={handleRun}
-                disabled={
-                  isRunning || !selectedWorkflow || !apiBase.trim() || !workflows.length
-                }
-              >
-                {isRunning ? "Running..." : "Run workflow"}
-              </Button>
-            </div>
-
-            {runError && (
-              <Alert variant="destructive">
-                <AlertTitle>Run failed</AlertTitle>
-                <AlertDescription>{runError}</AlertDescription>
-              </Alert>
-            )}
-            {runImageError && (
-              <Alert variant="destructive">
-                <AlertTitle>Image load failed</AlertTitle>
-                <AlertDescription>{runImageError}</AlertDescription>
-              </Alert>
-            )}
-            {runHistory && (
-              <Alert>
-                <AlertTitle>History debug</AlertTitle>
-                <AlertDescription>
-                  <div className="max-h-52 overflow-auto rounded bg-muted/60 p-2 font-mono text-[10px] leading-tight">
-                    {JSON.stringify(runHistory, null, 2)}
-                  </div>
-                </AlertDescription>
-              </Alert>
-            )}
-            {runResult?.imageUrl && (
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-foreground">
-                  Output image (SaveImage)
-                </p>
-                <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
-                  {runResult.proxyUrl && (
-                    <a
-                      className="underline"
-                      href={runResult.proxyUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open proxied image
-                    </a>
-                  )}
-                  {runResult.directUrl && (
-                    <a
-                      className="underline"
-                      href={runResult.directUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open direct image
-                    </a>
-                  )}
-                  <span className="break-all">
-                    Src: {runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
-                  </span>
+              {lastUpdated && (
+                <div className="text-xs text-muted-foreground">
+                  Updated {lastUpdated.toLocaleTimeString()}
                 </div>
-                <div className="overflow-hidden rounded border border-border/60 bg-card/40">
-                  {/* Using a plain img tag to support arbitrary ComfyUI hosts without image optimization config */}
-                  <img
-                    src={runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
-                    alt="Workflow output"
-                    className="w-full max-h-[520px] object-contain bg-muted"
-                    onError={() =>
-                      setRunImageError(
-                        "Could not display the output image. Click a link above to open it in a new tab."
-                      )
-                    }
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                <div className="space-y-2">
+                  <Label htmlFor="apiBase">ComfyUI API URL</Label>
+                  <Input
+                    id="apiBase"
+                    value={apiBase}
+                    onChange={(event) => setApiBase(event.target.value)}
+                    placeholder="http://desktop-ip:8188"
                   />
                 </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => setApiBase(defaultBaseUrl || "")}
+                    disabled={isFetching}
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => fetchWorkflows()}
+                    disabled={isFetching}
+                  >
+                    {isFetching ? "Loading..." : "Reload saved"}
+                  </Button>
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
 
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Workflow summary</CardTitle>
-            <CardDescription>
-              Node insights for the selected workflow (counts and key node types).
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            {selectedWorkflowDetails ? (
-              <>
+              {error && (
+                <Alert variant="destructive">
+                  <AlertTitle>Could not connect</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-6 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle>Workflows</CardTitle>
+                <CardDescription>
+                  Import your workflow JSON and store it on this server. We&apos;ll
+                  use this selection as the base for editing.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div className="space-y-2">
+                    <Label htmlFor="workflowFile">Import workflow JSON</Label>
+                    <Input
+                      id="workflowFile"
+                      type="file"
+                      accept="application/json"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        setImportFile(file);
+                        setImportMessage(null);
+                      }}
+                    />
+                <p className="text-xs text-muted-foreground">
+                  Uploads are appended on the server. Accepted: a single workflow
+                  object, an array, or an object with a <code>workflows</code> array.
+                </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleImport}
+                    disabled={!importFile || isImporting}
+                  >
+                    {isImporting ? "Saving..." : "Upload & save"}
+                  </Button>
+                </div>
+
+                {importMessage && (
+                  <Alert>
+                    <AlertTitle>Import complete</AlertTitle>
+                    <AlertDescription>{importMessage}</AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                  <div className="space-y-2">
+                    <Label htmlFor="workflow">Available workflows</Label>
+                    <Select
+                      value={selectedWorkflow}
+                      onValueChange={handleWorkflowChange}
+                      disabled={isFetching || workflows.length === 0}
+                    >
+                      <SelectTrigger id="workflow" className="w-full">
+                        <SelectValue
+                          placeholder={
+                            isFetching ? "Loading..." : "No workflows loaded yet"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {workflows.map((flow) => (
+                            <SelectItem key={flow.id} value={flow.id}>
+                              {flow.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Pick any saved workflow to load its summary below. Click
+                      &ldquo;Load saved workflows&rdquo; to sync with the server.
+                    </p>
+                    {workflowHint && (
+                      <p className="text-xs text-muted-foreground">
+                        Source: {workflowHint}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => fetchWorkflows()}
+                    disabled={isFetching}
+                  >
+                    {isFetching ? "Loading..." : "Load saved workflows"}
+                  </Button>
+                </div>
+                {!workflows.length && status === "connected" && (
+                  <p className="text-sm text-muted-foreground">
+                    No workflows are saved yet. Import a JSON file to populate this
+                    list.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="h-full">
+              <CardHeader>
+                <CardTitle>Session</CardTitle>
+                <CardDescription>Quick diagnostics for this UI.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <div className="flex items-center justify-between">
+                  <span>API base</span>
+                  <span className="max-w-[200px] truncate text-right text-foreground">
+                    {apiBase || "Not set"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Workflow</span>
+                  <span className="max-w-[200px] truncate text-right text-foreground">
+                    {selectedWorkflow || "Not selected"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Password</span>
+                  <Badge variant="outline">
+                    {passwordConfigured ? "Configured" : "Default in use"}
+                  </Badge>
+                </div>
+              </CardContent>
+              <CardFooter className="text-xs text-muted-foreground">
+                Add SSH port forwarding or a VPN if your desktop is not publicly
+                routable.
+              </CardFooter>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Debug options</CardTitle>
+                <CardDescription>Toggle developer/debug output in the UI.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <label className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={showDebug}
+                    onChange={(e) => setShowDebug(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span>Show debug history/logs in the run view</span>
+                </label>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Saved workflows</CardTitle>
+              <CardDescription>
+                Rename for clarity, view details, or delete. Click a row to open details.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="overflow-x-auto rounded border border-border/60">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-muted/60 text-foreground/80">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">Name</th>
+                      <th className="px-3 py-2 text-left font-semibold">ID</th>
+                      <th className="px-3 py-2 text-left font-semibold w-32">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workflows.length ? (
+                      workflows.map((wf) => (
+                        <WorkflowRow
+                          key={wf.id}
+                          workflow={wf}
+                          isSelected={selectedWorkflow === wf.id}
+                          onSelect={() => {
+                            setSelectedWorkflow(wf.id);
+                            setViewMode("detail");
+                          }}
+                          onRename={async (name) => {
+                            await handleRenameWorkflow(wf.id, name);
+                          }}
+                          onDelete={async () => {
+                            await handleDeleteWorkflow(wf.id);
+                          }}
+                          renamingId={renamingId}
+                          onStartRename={(id, current) => {
+                            setRenamingId(id);
+                            setRenameValue(current);
+                          }}
+                          onCancelRename={() => {
+                            setRenamingId(null);
+                            setRenameValue("");
+                          }}
+                          renameValue={renameValue}
+                          setRenameValue={setRenameValue}
+                        />
+                      ))
+                    ) : (
+                      <tr>
+                        <td className="px-3 py-3 text-muted-foreground" colSpan={3}>
+                          No workflows saved yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {viewMode === "detail" && selectedWorkflowDetails && (
+            <Card>
+              <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle>Workflow details</CardTitle>
+                  <CardDescription>{selectedWorkflowDetails.name}</CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setViewMode("list")}
+                >
+                  Back to workflows
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline">
                     Type: {selectedWorkflowDetails.summary?.workflowType || "unknown"}
@@ -1006,9 +1170,7 @@ function Dashboard({
                     Node type counts
                   </p>
                   <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 md:grid-cols-3">
-                    {Object.entries(
-                      selectedWorkflowDetails.summary?.typeCounts || {},
-                    )
+                    {Object.entries(selectedWorkflowDetails.summary?.typeCounts || {})
                       .sort(([, a], [, b]) => Number(b) - Number(a))
                       .slice(0, 12)
                       .map(([type, count]) => (
@@ -1022,54 +1184,197 @@ function Dashboard({
                       ))}
                   </div>
                 </div>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Select or import a workflow to see its node breakdown.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-foreground">Workflow JSON</p>
+                  <Textarea
+                    readOnly
+                    className="min-h-[260px] resize-none text-xs"
+                    value={rawPreview}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Workflow JSON</CardTitle>
-            <CardDescription>
-              Quick peek at the raw object (truncated). Full copy is stored on
-              the server.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Textarea
-              readOnly
-              className="min-h-[260px] resize-none text-xs"
-              value={rawPreview}
-            />
-          </CardContent>
-        </Card>
-      </div>
+      {!isSettings && (
+        <>
+          <div className="grid gap-6 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle>Run workflow</CardTitle>
+                <CardDescription>
+                  Set prompts, (optionally) upload an input image, then run against
+                  your ComfyUI API.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="runWorkflow">Workflow to run</Label>
+                  <Select
+                    value={selectedWorkflow}
+                    onValueChange={(value) => {
+                      setSelectedWorkflow(value);
+                      localStorage.setItem(STORAGE_KEYS.workflow, value);
+                    }}
+                    disabled={isFetching || workflows.length === 0}
+                  >
+                    <SelectTrigger id="runWorkflow" className="w-full">
+                      <SelectValue
+                        placeholder={
+                          isFetching ? "Loading..." : "Select a saved workflow"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {workflows.map((flow) => (
+                          <SelectItem key={flow.id} value={flow.id}>
+                            {flow.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  {selectedWorkflowDetails?.summary && (
+                    <div className="text-xs text-muted-foreground">
+                      Type: {selectedWorkflowDetails.summary.workflowType} · Nodes:{" "}
+                      {selectedWorkflowDetails.summary.totalNodes}
+                    </div>
+                  )}
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="positivePrompt">Positive prompt</Label>
+                    <Textarea
+                      id="positivePrompt"
+                      value={positivePrompt}
+                      onChange={(event) => setPositivePrompt(event.target.value)}
+                      placeholder="Describe what you want."
+                      className="min-h-[120px]"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="negativePrompt">Negative prompt</Label>
+                    <Textarea
+                      id="negativePrompt"
+                      value={negativePrompt}
+                      onChange={(event) => setNegativePrompt(event.target.value)}
+                      placeholder="Things to avoid."
+                      className="min-h-[120px]"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <div className="space-y-2">
+                    <Label htmlFor="runImage">Load image (optional)</Label>
+                    <Input
+                      id="runImage"
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        setRunImageFile(file);
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      If your workflow uses a LoadImage node, this replaces its
+                      file.
+                    </p>
+                    {runImagePreview && (
+                      <div className="overflow-hidden rounded border border-border/60 bg-card/40">
+                        <img
+                          src={runImagePreview}
+                          alt="Selected input preview"
+                          className="w-full max-h-72 object-contain bg-muted"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleRun}
+                    disabled={
+                      isRunning || !selectedWorkflow || !apiBase.trim() || !workflows.length
+                    }
+                  >
+                    {isRunning ? "Running..." : "Run workflow"}
+                  </Button>
+                </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Workflow editor placeholder</CardTitle>
-          <CardDescription>
-            Tell me how you want this section to look and behave, and I will
-            wire it up to the workflow you select above.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Textarea
-            readOnly
-            className="min-h-[140px] resize-none"
-            value={`Coming soon:
-- Map nodes and parameters for the selected workflow.
-- Save, duplicate, and run workflows against your ComfyUI server.
-- Stream logs and progress from the API endpoint you set above.
-
-Let me know the exact layout or controls you want next.`}
-          />
-        </CardContent>
-      </Card>
+                {runError && (
+                  <Alert variant="destructive">
+                    <AlertTitle>Run failed</AlertTitle>
+                    <AlertDescription>{runError}</AlertDescription>
+                  </Alert>
+                )}
+                {runImageError && (
+                  <Alert variant="destructive">
+                    <AlertTitle>Image load failed</AlertTitle>
+                    <AlertDescription>{runImageError}</AlertDescription>
+                  </Alert>
+                )}
+                {showDebug && runHistory && (
+                  <Alert>
+                    <AlertTitle>History debug</AlertTitle>
+                    <AlertDescription>
+                      <div className="max-h-52 overflow-auto rounded bg-muted/60 p-2 font-mono text-[10px] leading-tight">
+                        {JSON.stringify(runHistory, null, 2)}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {runResult?.imageUrl && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">
+                      Output image (SaveImage)
+                    </p>
+                    <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
+                      {runResult.proxyUrl && (
+                        <a
+                          className="underline"
+                          href={runResult.proxyUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open proxied image
+                        </a>
+                      )}
+                      {runResult.directUrl && (
+                        <a
+                          className="underline"
+                          href={runResult.directUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open direct image
+                        </a>
+                      )}
+                      <span className="break-all">
+                        Src: {runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
+                      </span>
+                    </div>
+                    <div className="overflow-hidden rounded border border-border/60 bg-card/40">
+                      {/* Using a plain img tag to support arbitrary ComfyUI hosts without image optimization config */}
+                      <img
+                        src={runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
+                        alt="Workflow output"
+                        className="w-full max-h-[520px] object-contain bg-muted"
+                        onError={() =>
+                          setRunImageError(
+                            "Could not display the output image. Click a link above to open it in a new tab."
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
     </div>
   );
 }
