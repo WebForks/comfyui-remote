@@ -113,10 +113,33 @@
 }
 
 @layer base {
+  html,
+  :host {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+  }
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Ensure text-size-adjust is present for all agents (webhint/a11y) */
+html,
+:host {
+  text-size-adjust: 100% !important;
+  -webkit-text-size-adjust: 100% !important;
+  -ms-text-size-adjust: 100% !important;
+}
+
+/* Ensure vendor-prefixed appearance order for lint/a11y tooling */
+button,
+input,
+select,
+textarea {
+  -webkit-appearance: none;
+  appearance: none;
 }

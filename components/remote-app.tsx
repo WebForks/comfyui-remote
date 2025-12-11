@@ -1211,16 +1211,21 @@ function Dashboard({
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="runWorkflow">Workflow to run</Label>
-                  <Select
-                    value={selectedWorkflow}
-                    onValueChange={(value) => {
-                      setSelectedWorkflow(value);
+                <Label htmlFor="runWorkflow">Workflow to run</Label>
+                <Select
+                  value={selectedWorkflow}
+                  onValueChange={(value) => {
+                    setSelectedWorkflow(value);
                       localStorage.setItem(STORAGE_KEYS.workflow, value);
                     }}
                     disabled={isFetching || workflows.length === 0}
                   >
-                    <SelectTrigger id="runWorkflow" className="w-full">
+                    <SelectTrigger
+                      id="runWorkflow"
+                      className="w-full"
+                      aria-label="Workflow to run"
+                      title="Workflow to run"
+                    >
                       <SelectValue
                         placeholder={
                           isFetching ? "Loading..." : "Select a saved workflow"

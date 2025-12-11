@@ -11,17 +11,27 @@ export async function GET() {
   if (!(await readIsAuthenticated())) {
     return NextResponse.json(
       { error: "Not authenticated" },
-      { status: 401, statusText: "Unauthorized" },
+      {
+        status: 401,
+        statusText: "Unauthorized",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      },
     );
   }
 
   try {
     const workflows = await readStoredWorkflows();
-    return NextResponse.json({ workflows, source: "stored" });
+    return NextResponse.json(
+      { workflows, source: "stored" },
+      { headers: { "Content-Type": "application/json; charset=utf-8" } },
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to read stored workflows.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" } },
+    );
   }
 }
 
@@ -29,7 +39,11 @@ export async function POST(req: NextRequest) {
   if (!(await readIsAuthenticated())) {
     return NextResponse.json(
       { error: "Not authenticated" },
-      { status: 401, statusText: "Unauthorized" },
+      {
+        status: 401,
+        statusText: "Unauthorized",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      },
     );
   }
 
@@ -74,7 +88,7 @@ export async function POST(req: NextRequest) {
           error:
             "No workflows found in the uploaded file. Expect an array of workflows or an object with a 'workflows' array.",
         },
-        { status: 400 },
+        { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" } },
       );
     }
 
@@ -96,14 +110,20 @@ export async function POST(req: NextRequest) {
 
     await persistWorkflows(merged);
 
-    return NextResponse.json({ workflows: merged, saved: true });
+    return NextResponse.json(
+      { workflows: merged, saved: true },
+      { headers: { "Content-Type": "application/json; charset=utf-8" } },
+    );
   } catch (error) {
     const message =
       error instanceof Error
         ? error.message
         : "Failed to save the uploaded workflows.";
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" } },
+    );
   }
 }
 
@@ -111,7 +131,11 @@ export async function PATCH(req: NextRequest) {
   if (!(await readIsAuthenticated())) {
     return NextResponse.json(
       { error: "Not authenticated" },
-      { status: 401, statusText: "Unauthorized" },
+      {
+        status: 401,
+        statusText: "Unauthorized",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      },
     );
   }
 
@@ -123,7 +147,7 @@ export async function PATCH(req: NextRequest) {
     if (!id || !name) {
       return NextResponse.json(
         { error: "Both id and name are required." },
-        { status: 400 },
+        { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" } },
       );
     }
 
@@ -133,11 +157,17 @@ export async function PATCH(req: NextRequest) {
     );
 
     await persistWorkflows(updated);
-    return NextResponse.json({ workflows: updated, updated: id });
+    return NextResponse.json(
+      { workflows: updated, updated: id },
+      { headers: { "Content-Type": "application/json; charset=utf-8" } },
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to rename workflow.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" } },
+    );
   }
 }
 
@@ -145,7 +175,11 @@ export async function DELETE(req: NextRequest) {
   if (!(await readIsAuthenticated())) {
     return NextResponse.json(
       { error: "Not authenticated" },
-      { status: 401, statusText: "Unauthorized" },
+      {
+        status: 401,
+        statusText: "Unauthorized",
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      },
     );
   }
 
@@ -156,7 +190,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) {
       return NextResponse.json(
         { error: "Missing id to delete." },
-        { status: 400 },
+        { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" } },
       );
     }
 
@@ -164,10 +198,16 @@ export async function DELETE(req: NextRequest) {
     const filtered = workflows.filter((wf) => wf.id !== id);
 
     await persistWorkflows(filtered);
-    return NextResponse.json({ workflows: filtered, deleted: id });
+    return NextResponse.json(
+      { workflows: filtered, deleted: id },
+      { headers: { "Content-Type": "application/json; charset=utf-8" } },
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to delete workflow.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message },
+      { status: 500, headers: { "Content-Type": "application/json; charset=utf-8" } },
+    );
   }
 }
