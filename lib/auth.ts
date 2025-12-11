@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import { cookies, type ReadonlyRequestCookies } from "next/headers";
+import { cookies } from "next/headers";
 
 const AUTH_COOKIE_NAME = "comfyui_remote_session";
 const SESSION_KEY = "comfyui-remote-session";
@@ -40,12 +40,9 @@ export function verifySessionToken(token?: string | null) {
   }
 }
 
-export async function readIsAuthenticated(
-  cookieStore?: ReadonlyRequestCookies | Promise<ReadonlyRequestCookies>,
-): Promise<boolean> {
-  const store = cookieStore ? await cookieStore : await cookies();
+export async function readIsAuthenticated(): Promise<boolean> {
+  const store = await cookies();
   const token = store.get(AUTH_COOKIE_NAME)?.value;
-
   return verifySessionToken(token);
 }
 

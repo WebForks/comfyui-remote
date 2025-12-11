@@ -461,10 +461,19 @@ async function uploadImage(
     );
   }
 
-  const data = (await response.json()) as {
-    name?: string;
-    filename?: string;
-  };
+  const raw = await response.text();
+  let data: { name?: string; filename?: string } | null = null;
+  try {
+    data = JSON.parse(raw) as { name?: string; filename?: string };
+  } catch {
+    /* ignore */
+  }
+
+  if (!data) {
+    throw new Error(
+      `Unexpected response from ComfyUI upload: ${raw.slice(0, 200)}`
+    );
+  }
 
   return data.name || data.filename || file.name || null;
 }
@@ -553,48 +562,56 @@ async function pollForResult(
     });
 
     if (res.ok) {
-      const body = (await res.json()) as Record<string, unknown>;
-      lastHistoryById = body;
-      const image = extractImageFromBody(body, promptId);
-      if (image?.filename) {
-        return {
-          imageUrl: buildImageUrl(
-            baseUrl,
-            image.filename,
-            image.subfolder,
-            image.type
-          ),
-          filename: image.filename,
-          subfolder: image.subfolder,
-          type: image.type,
-          promptId,
-          clientId: "",
-          history: body,
-        };
+      const body = (await res.json().catch(() => null)) as
+        | Record<string, unknown>
+        | null;
+      if (body) {
+        lastHistoryById = body;
+        const image = extractImageFromBody(body, promptId);
+        if (image?.filename) {
+          return {
+            imageUrl: buildImageUrl(
+              baseUrl,
+              image.filename,
+              image.subfolder,
+              image.type
+            ),
+            filename: image.filename,
+            subfolder: image.subfolder,
+            type: image.type,
+            promptId,
+            clientId: "",
+            history: body,
+          };
+        }
       }
     }
 
     const historyRes = await fetch(`${baseUrl}/history`, { cache: "no-store" });
     if (historyRes.ok) {
-      const historyBody = (await historyRes.json()) as Record<string, unknown>;
-      lastFullHistory = historyBody;
-      const image = extractImageFromBody(historyBody, promptId);
-      if (image?.filename) {
-        return {
-          imageUrl: buildImageUrl(
-            baseUrl,
-            image.filename,
-            image.subfolder,
-            image.type
-          ),
-          filename: image.filename,
-          subfolder: image.subfolder,
-          type: image.type,
-          promptId,
-          clientId: "",
-          history: lastHistoryById,
-          fullHistory: historyBody,
-        };
+      const historyBody = (await historyRes.json().catch(() => null)) as
+        | Record<string, unknown>
+        | null;
+      if (historyBody) {
+        lastFullHistory = historyBody;
+        const image = extractImageFromBody(historyBody, promptId);
+        if (image?.filename) {
+          return {
+            imageUrl: buildImageUrl(
+              baseUrl,
+              image.filename,
+              image.subfolder,
+              image.type
+            ),
+            filename: image.filename,
+            subfolder: image.subfolder,
+            type: image.type,
+            promptId,
+            clientId: "",
+            history: lastHistoryById,
+            fullHistory: historyBody,
+          };
+        }
       }
     }
 
@@ -687,13 +704,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { prompt_id: promptId } = (await response.json()) as {
-      prompt_id?: string;
-    };
+    const rawPrompt = await response.text();
+    let parsedPrompt: { prompt_id?: string } | null = null;
+    try {
+      parsedPrompt = JSON.parse(rawPrompt) as { prompt_id?: string };
+    } catch {
+      /* ignore */
+    }
+
+    const promptId = parsedPrompt?.prompt_id;
 
     if (!promptId) {
       return NextResponse.json(
-        { error: "ComfyUI did not return a prompt_id." },
+        {
+          error:
+            "ComfyUI did not return a prompt_id. Response: " +
+            rawPrompt.slice(0, 200),
+        },
         { status: 500 }
       );
     }

@@ -6,6 +6,7 @@ export type WorkflowNode = {
   type?: string;
   title?: string;
   widgets_values?: unknown[];
+  inputs?: unknown[];
 };
 
 export type WorkflowSummary = {

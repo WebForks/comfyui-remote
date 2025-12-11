@@ -61,6 +61,8 @@ type WorkflowNode = {
   id?: number | string;
   type?: string;
   title?: string;
+  widgets_values?: unknown[];
+  inputs?: unknown[];
 };
 
 type WorkflowOption = {
@@ -587,11 +589,7 @@ function Dashboard({
 
   const rawPreview = useMemo(() => {
     if (!selectedWorkflowDetails?.raw) return "Select a workflow to preview its JSON.";
-    const serialized = JSON.stringify(selectedWorkflowDetails.raw, null, 2);
-    if (serialized.length > 1800) {
-      return `${serialized.slice(0, 1800)}\n... (truncated)`;
-    }
-    return serialized;
+    return JSON.stringify(selectedWorkflowDetails.raw, null, 2);
   }, [selectedWorkflowDetails]);
 
   const handleImport = useCallback(async () => {
@@ -1047,15 +1045,26 @@ function Dashboard({
                 <CardDescription>Toggle developer/debug output in the UI.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                <label className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={showDebug}
-                    onChange={(e) => setShowDebug(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  <span>Show debug history/logs in the run view</span>
-                </label>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    aria-pressed={showDebug}
+                    aria-label="Toggle debug mode"
+                    onClick={() => setShowDebug((prev) => !prev)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      showDebug ? "bg-red-500" : "bg-muted"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                        showDebug ? "translate-x-5" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                  <span className={showDebug ? "text-red-600 font-semibold" : ""}>
+                    {showDebug ? "Debug mode enabled" : "Show debug history/logs in the run view"}
+                  </span>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -1311,7 +1320,7 @@ function Dashboard({
                     <AlertDescription>{runImageError}</AlertDescription>
                   </Alert>
                 )}
-                {showDebug && runHistory && (
+                {showDebug && !!runHistory && (
                   <Alert>
                     <AlertTitle>History debug</AlertTitle>
                     <AlertDescription>
