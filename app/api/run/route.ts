@@ -726,13 +726,14 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await pollForResult(baseUrl, promptId);
-    const requestUrl = new URL(req.url);
-    const proxyUrl = new URL("/api/image", requestUrl.origin);
-    proxyUrl.searchParams.set("filename", result.filename);
-    if (result.subfolder) proxyUrl.searchParams.set("subfolder", result.subfolder);
-    if (result.type) proxyUrl.searchParams.set("type", result.type);
-    proxyUrl.searchParams.set("baseUrl", baseUrl);
-    proxyUrl.searchParams.set("token", getSessionToken());
+    // Use a relative proxy URL so it works behind reverse proxies
+    const proxyParams = new URLSearchParams();
+    proxyParams.set("filename", result.filename);
+    if (result.subfolder) proxyParams.set("subfolder", result.subfolder);
+    if (result.type) proxyParams.set("type", result.type);
+    proxyParams.set("baseUrl", baseUrl);
+    proxyParams.set("token", getSessionToken());
+    const proxyUrl = `/api/image?${proxyParams.toString()}`;
 
     return NextResponse.json({
       ...result,
