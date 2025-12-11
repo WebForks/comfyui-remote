@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getSessionToken, readIsAuthenticated } from "@/lib/auth";
+import { saveImageToHistory } from "@/lib/history";
 import {
   readStoredWorkflows,
   summarizeWorkflow,
@@ -726,6 +727,22 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await pollForResult(baseUrl, promptId);
+    // Best-effort: download and persist output for history
+    try {
+      const imageRes = await fetch(
+        buildImageUrl(baseUrl, result.filename, result.subfolder, result.type),
+        { cache: "no-store" }
+      );
+      if (imageRes.ok) {
+        const arrayBuf = await imageRes.arrayBuffer();
+        await saveImageToHistory(Buffer.from(arrayBuf), result.filename, {
+          promptId,
+          workflowId,
+        });
+      }
+    } catch {
+      /* ignore history save errors */
+    }
     // Use a relative proxy URL so it works behind reverse proxies
     const proxyParams = new URLSearchParams();
     proxyParams.set("filename", result.filename);

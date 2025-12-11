@@ -8,6 +8,7 @@ Password-gated Next.js + shadcn/ui front end to point at your desktop ComfyUI in
 - Run view with workflow selector, positive/negative prompts, required input image (replaces LoadImage), and inline output (SaveImage) with Open/Download buttons.
 - Debug toggle (in Settings) to show/hide run history/logs and image source URLs.
 - Dockerfile + `docker-compose.yml` for a one-command deploy.
+- History page that persists output images to `data/outputs` and lets you download/delete them.
 
 ## Quick start (local)
 1) Install deps (npm will use the repo-local `.npmrc` cache path):
@@ -47,6 +48,7 @@ Environment variables:
 - `AUTH_SECRET` – secret used to sign the auth cookie.
 - `NEXT_PUBLIC_COMFYUI_BASE_URL` – optional default ComfyUI API URL (can be overridden in the UI).
 - Volume: `./data:/app/data` (included) to persist saved/renamed workflows on the host. You can swap for a named volume if preferred.
+  - Outputs are stored under `data/outputs` and history metadata under `data/history.json`.
 
 The UI listens on `localhost:3000`.
 
