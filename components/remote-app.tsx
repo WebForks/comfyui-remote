@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Home, Moon, Settings, Sun } from "lucide-react";
+import { Download, Home, Moon, Settings, Sun } from "lucide-react";
 
 type RemoteAppProps = {
   authenticated: boolean;
@@ -801,8 +801,8 @@ function Dashboard({
   );
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="mx-auto flex w-full flex-col gap-6 px-4 py-10">
+      <header className="mx-auto flex w-full flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Link href="/" className="text-3xl font-semibold hover:underline">
@@ -827,18 +827,19 @@ function Dashboard({
             className="h-9 w-9"
             onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
             aria-label="Toggle theme"
+            title="Toggle theme"
           >
             {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
           {variant === "dashboard" ? (
             <Button asChild variant="outline" size="icon" className="h-9 w-9">
-              <Link href="/settings" aria-label="Open settings">
+              <Link href="/settings" aria-label="Open settings" title="Open settings">
                 <Settings className="h-4 w-4" />
               </Link>
             </Button>
           ) : (
             <Button asChild variant="outline" size="icon" className="h-9 w-9">
-              <Link href="/" aria-label="Back to dashboard">
+              <Link href="/" aria-label="Back to dashboard" title="Back to dashboard">
                 <Home className="h-4 w-4" />
               </Link>
             </Button>
@@ -1200,13 +1201,12 @@ function Dashboard({
 
       {!isSettings && (
         <>
-          <div className="grid gap-6 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
+          <div className="grid gap-6">
+            <Card className="w-full mx-auto">
               <CardHeader>
                 <CardTitle>Run workflow</CardTitle>
                 <CardDescription>
-                  Set prompts, (optionally) upload an input image, then run against
-                  your ComfyUI API.
+                  Set prompts, upload an input image, then run against your ComfyUI API.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1266,9 +1266,9 @@ function Dashboard({
                     />
                   </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                  <div className="space-y-2">
-                    <Label htmlFor="runImage">Load image (optional)</Label>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1 flex-1">
+                    <Label htmlFor="runImage">Load image</Label>
                     <Input
                       id="runImage"
                       type="file"
@@ -1279,18 +1279,8 @@ function Dashboard({
                       }}
                     />
                     <p className="text-xs text-muted-foreground">
-                      If your workflow uses a LoadImage node, this replaces its
-                      file.
+                      Replaces the file on LoadImage nodes for this run.
                     </p>
-                    {runImagePreview && (
-                      <div className="overflow-hidden rounded border border-border/60 bg-card/40">
-                        <img
-                          src={runImagePreview}
-                          alt="Selected input preview"
-                          className="w-full max-h-72 object-contain bg-muted"
-                        />
-                      </div>
-                    )}
                   </div>
                   <Button
                     type="button"
@@ -1298,6 +1288,7 @@ function Dashboard({
                     disabled={
                       isRunning || !selectedWorkflow || !apiBase.trim() || !workflows.length
                     }
+                    className="sm:self-center"
                   >
                     {isRunning ? "Running..." : "Run workflow"}
                   </Button>
@@ -1325,51 +1316,88 @@ function Dashboard({
                     </AlertDescription>
                   </Alert>
                 )}
-                {runResult?.imageUrl && (
+                <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <p className="text-sm font-medium text-foreground">
-                      Output image (SaveImage)
-                    </p>
-                    <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
-                      {runResult.proxyUrl && (
-                        <a
-                          className="underline"
-                          href={runResult.proxyUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open proxied image
-                        </a>
-                      )}
-                      {runResult.directUrl && (
-                        <a
-                          className="underline"
-                          href={runResult.directUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open direct image
-                        </a>
-                      )}
-                      <span className="break-all">
-                        Src: {runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
+                    <div className="flex items-center justify-between text-sm font-medium text-foreground">
+                      <span>Input image (LoadImage)</span>
+                      <span className="text-xs text-muted-foreground">
+                        {runImagePreview ? "Size: auto" : ""}
                       </span>
                     </div>
-                    <div className="overflow-hidden rounded border border-border/60 bg-card/40">
-                      {/* Using a plain img tag to support arbitrary ComfyUI hosts without image optimization config */}
-                      <img
-                        src={runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
-                        alt="Workflow output"
-                        className="w-full max-h-[520px] object-contain bg-muted"
-                        onError={() =>
-                          setRunImageError(
-                            "Could not display the output image. Click a link above to open it in a new tab."
-                          )
-                        }
-                      />
+                    <div className="overflow-hidden rounded border border-border/60 bg-card/40 h-[360px] flex items-center justify-center">
+                      {runImagePreview ? (
+                        <img
+                          src={runImagePreview}
+                          alt="Selected input preview"
+                          className="h-full w-full object-contain bg-muted"
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground px-3 text-center">
+                          No input image selected. Choose a file above to replace LoadImage nodes.
+                        </span>
+                      )}
                     </div>
                   </div>
-                )}
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm font-medium text-foreground">
+                      <span>Output image (SaveImage)</span>
+                      <span className="text-xs text-muted-foreground">
+                        {runResult?.imageUrl ? "Size: auto" : ""}
+                      </span>
+                    </div>
+                    <div className="overflow-hidden rounded border border-border/60 bg-card/40 h-[360px] flex items-center justify-center">
+                      {runResult?.imageUrl ? (
+                        <img
+                          src={runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
+                          alt="Workflow output"
+                          className="h-full w-full object-contain bg-muted"
+                          onError={() =>
+                            setRunImageError(
+                              "Could not display the output image. Click a link above to open it in a new tab."
+                            )
+                          }
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground px-3 text-center">
+                          No output yet. Run the workflow to see the SaveImage result here.
+                        </span>
+                      )}
+                    </div>
+                    {runResult?.imageUrl && (
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        <Button
+                          asChild
+                          variant="secondary"
+                          size="sm"
+                          className="flex items-center gap-2"
+                        >
+                          <a
+                            href={
+                              runResult.proxyUrl || runResult.imageUrl || runResult.directUrl || "#"
+                            }
+                            download={runResult.filename || "output.png"}
+                          >
+                            <Download className="h-4 w-4" />
+                            Download
+                          </a>
+                        </Button>
+                        {runResult.directUrl && (
+                          <Button asChild variant="secondary" size="sm">
+                            <a href={runResult.directUrl} target="_blank" rel="noreferrer">
+                              Open
+                            </a>
+                          </Button>
+                        )}
+                        {showDebug && (
+                          <span className="text-xs text-muted-foreground break-all">
+                            Src: {runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
