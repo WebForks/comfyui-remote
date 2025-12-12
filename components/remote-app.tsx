@@ -585,6 +585,8 @@ function Dashboard({
           proxyUrl?: string;
           directUrl?: string;
           filename?: string;
+          subfolder?: string;
+          type?: string;
           history?: unknown;
           fullHistory?: unknown;
         };
@@ -616,8 +618,8 @@ function Dashboard({
             proxyUrl: body.proxyUrl,
             directUrl: body.directUrl,
             filename: body.filename || "",
-            subfolder: body.subfolder,
-            type: body.type,
+            subfolder: body.subfolder || "",
+            type: body.type || "",
             promptId,
             clientId: "",
             history: body.history,
