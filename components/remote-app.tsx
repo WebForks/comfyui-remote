@@ -79,6 +79,7 @@ type RunResult = {
   directUrl?: string;
   filename: string;
   seedUsed?: string;
+  stepsUsed?: string;
   subfolder?: string;
   type?: string;
   promptId: string;
@@ -96,6 +97,7 @@ const STORAGE_KEYS = {
   workflow: "comfyui-workflow",
   promptPositive: "comfyui-positive",
   promptNegative: "comfyui-negative",
+  promptSteps: "comfyui-steps",
 };
 
 export function RemoteApp({
@@ -375,6 +377,14 @@ function Dashboard({
   const [negativePrompt, setNegativePrompt] = useState("");
   const [runImageFile, setRunImageFile] = useState<File | null>(null);
   const [runImagePreview, setRunImagePreview] = useState<string | null>(null);
+  const [runImageSize, setRunImageSize] = useState<{ width: number; height: number } | null>(
+    null,
+  );
+  const [stepsInput, setStepsInput] = useState("20");
+  const [outputImageSize, setOutputImageSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const randomSeed = useMemo(() => {
     const min = 0;
     const max = 9_999_999_999;
@@ -402,6 +412,7 @@ function Dashboard({
   const negativeRef = useRef<string>("");
   const inputNameRef = useRef<string>("");
   const runTagRef = useRef<string>("");
+  const stepsInputRef = useRef<string>(stepsInput);
   const promptsLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -411,6 +422,7 @@ function Dashboard({
     const savedDebug = localStorage.getItem("comfyui-show-debug");
     const savedPos = localStorage.getItem(STORAGE_KEYS.promptPositive);
     const savedNeg = localStorage.getItem(STORAGE_KEYS.promptNegative);
+    const savedSteps = localStorage.getItem(STORAGE_KEYS.promptSteps);
     const savedTestStatus = localStorage.getItem("comfyui-test-status");
     const savedTestMessage = localStorage.getItem("comfyui-test-message");
 
@@ -433,6 +445,7 @@ function Dashboard({
     setShowDebug(savedDebug === "true");
     if (savedPos) setPositivePrompt(savedPos);
     if (savedNeg) setNegativePrompt(savedNeg);
+    if (savedSteps) setStepsInput(savedSteps);
     if (savedPos || savedNeg) promptsLoadedRef.current = true;
     if (savedTestStatus === "ok" || savedTestStatus === "error") {
       setTestStatus(savedTestStatus);
@@ -465,8 +478,16 @@ function Dashboard({
   }, [negativePrompt]);
 
   useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.promptSteps, stepsInput);
+  }, [stepsInput]);
+
+  useEffect(() => {
     seedInputRef.current = seedInput;
   }, [seedInput]);
+
+  useEffect(() => {
+    stepsInputRef.current = stepsInput;
+  }, [stepsInput]);
 
   useEffect(() => {
     return () => {
@@ -610,6 +631,7 @@ function Dashboard({
             positivePrompt: positiveRef.current,
             negativePrompt: negativeRef.current,
             seed: seedForRunRef.current,
+            steps: stepsInputRef.current,
             inputFilename: inputNameRef.current,
             workflowName: selectedWorkflowDetails?.name,
             runTag: runTagRef.current,
@@ -653,20 +675,22 @@ function Dashboard({
         }
 
         if (body.status === "done" && body.imageUrl) {
-          setRunResult({
-            imageUrl: body.imageUrl,
-            proxyUrl: body.proxyUrl,
-            directUrl: body.directUrl,
-            filename: body.filename || "",
-            subfolder: body.subfolder || "",
-            type: body.type || "",
-            promptId,
-            clientId: "",
-            seedUsed: body.usedSeed || seedForRunRef.current || undefined,
-            workflowName: body.workflowName || selectedWorkflowDetails?.name,
-            history: body.history,
-            fullHistory: body.fullHistory,
-          });
+      setRunResult({
+        imageUrl: body.imageUrl,
+        proxyUrl: body.proxyUrl,
+        directUrl: body.directUrl,
+        filename: body.filename || "",
+        subfolder: body.subfolder || "",
+        type: body.type || "",
+        promptId,
+        clientId: "",
+        seedUsed: body.usedSeed || seedForRunRef.current || undefined,
+        stepsUsed: body.usedSteps || stepsInputRef.current || undefined,
+        workflowName: body.workflowName || selectedWorkflowDetails?.name,
+        history: body.history,
+        fullHistory: body.fullHistory,
+      });
+          setOutputImageSize(null);
           setRunHistory(body.history || body.fullHistory || body);
           setRunError(null);
           randomizeSeed();
@@ -680,7 +704,7 @@ function Dashboard({
         stopPolling();
       }
     },
-    [apiBase, stopPolling, selectedWorkflowDetails],
+    [apiBase, stopPolling, selectedWorkflowDetails, randomizeSeed],
   );
 
   const derivedPrompts = useMemo(() => {
@@ -762,9 +786,16 @@ function Dashboard({
     if (runImageFile) {
       const objectUrl = URL.createObjectURL(runImageFile);
       setRunImagePreview(objectUrl);
+      setRunImageSize(null);
+      const img = new Image();
+      img.onload = () => {
+        setRunImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+      };
+      img.src = objectUrl;
       return () => URL.revokeObjectURL(objectUrl);
     }
     setRunImagePreview(null);
+    setRunImageSize(null);
     return undefined;
   }, [runImageFile]);
 
@@ -850,9 +881,10 @@ function Dashboard({
     setRunError(null);
     setRunImageError(null);
     setRunResult(null);
+    setOutputImageSize(null);
     setRunHistory(null);
-    setIsRunning(true);
     const seedToUse = (seedInputRef.current || "").trim() || "-1";
+    const stepsToUse = (stepsInputRef.current || "").trim();
     seedForRunRef.current = seedToUse;
     positiveRef.current = positivePrompt;
     negativeRef.current = negativePrompt;
@@ -868,6 +900,7 @@ function Dashboard({
         form.append("image", runImageFile);
       }
       form.append("seed", seedToUse);
+      form.append("steps", stepsToUse);
 
       const response = await fetch("/api/run", {
         method: "POST",
@@ -1470,61 +1503,82 @@ function Dashboard({
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="runWorkflow">Workflow to run</Label>
                   <div className="grid gap-3 sm:grid-cols-[2fr_1fr] sm:items-end">
-                    <Select
-                      value={selectedWorkflow}
-                      onValueChange={(value) => {
-                        if (value === "__choose") return;
-                        setSelectedWorkflow(value);
-                        localStorage.setItem(STORAGE_KEYS.workflow, value);
-                      }}
-                      disabled={isFetching || workflows.length === 0}
-                    >
-                      <SelectTrigger
-                        id="runWorkflow"
-                        className="w-full"
-                        aria-label="Workflow to run"
-                        title="Workflow to run"
-                      >
-                        <SelectValue
-                          placeholder={
-                            isFetching ? "Loading..." : "Select a saved workflow"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {workflows.map((flow) => (
-                            <SelectItem key={flow.id} value={flow.id}>
-                              {flow.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
                     <div className="space-y-1">
-                      <Label htmlFor="seed">Seed</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          id="seed"
-                          value={seedInput}
-                          onChange={(e) => setSeedInput(e.target.value)}
-                          placeholder="-1 for random"
-                          inputMode="numeric"
-                          pattern="-?[0-9]*"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="shrink-0"
-                          onClick={randomizeSeed}
-                          aria-label="Randomize seed"
-                          title="Randomize seed"
+                      <Label htmlFor="runWorkflow">Workflow to run</Label>
+                      <Select
+                        value={selectedWorkflow}
+                        onValueChange={(value) => {
+                          if (value === "__choose") return;
+                          setSelectedWorkflow(value);
+                          localStorage.setItem(STORAGE_KEYS.workflow, value);
+                        }}
+                        disabled={isFetching || workflows.length === 0}
+                      >
+                        <SelectTrigger
+                          id="runWorkflow"
+                          className="w-full"
+                          aria-label="Workflow to run"
+                          title="Workflow to run"
                         >
-                          <Dice5 className="h-4 w-4" />
-                        </Button>
+                          <SelectValue
+                            placeholder={
+                              isFetching ? "Loading..." : "Select a saved workflow"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {workflows.map((flow) => (
+                              <SelectItem key={flow.id} value={flow.id}>
+                                {flow.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr]">
+                        <div className="space-y-1">
+                          <Label htmlFor="seed" className="text-xs">
+                            Seed
+                          </Label>
+                          <Input
+                            id="seed"
+                            value={seedInput}
+                            onChange={(e) => setSeedInput(e.target.value)}
+                            placeholder="-1 for random"
+                            inputMode="numeric"
+                            pattern="-?[0-9]*"
+                          />
+                        </div>
+                        <div className="flex items-end justify-center">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="shrink-0"
+                            onClick={randomizeSeed}
+                            aria-label="Randomize seed"
+                            title="Randomize seed"
+                          >
+                            <Dice5 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="steps" className="text-xs">
+                            Steps
+                          </Label>
+                          <Input
+                            id="steps"
+                            value={stepsInput}
+                            onChange={(e) => setStepsInput(e.target.value)}
+                            placeholder="Steps"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1612,7 +1666,11 @@ function Dashboard({
                     <div className="flex items-center justify-between text-sm font-medium text-foreground">
                       <span>Input image (LoadImage)</span>
                       <span className="text-xs text-muted-foreground">
-                        {runImagePreview ? "Size: auto" : ""}
+                        {runImageSize
+                          ? `Size: ${runImageSize.width}×${runImageSize.height}`
+                          : runImagePreview
+                            ? "Size: loading..."
+                            : ""}
                       </span>
                     </div>
                     <div className="overflow-hidden rounded border border-border/60 bg-card/40 h-[360px] flex items-center justify-center">
@@ -1630,24 +1688,34 @@ function Dashboard({
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm font-medium text-foreground">
-                      <span>Output image (SaveImage)</span>
-                      <span className="text-xs text-muted-foreground">
-                        {runResult?.imageUrl ? "Size: auto" : ""}
-                      </span>
-                    </div>
-                    <div className="overflow-hidden rounded border border-border/60 bg-card/40 h-[360px] flex items-center justify-center">
-                      {runResult?.imageUrl ? (
-                        <img
-                          src={runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
-                          alt="Workflow output"
-                          className="h-full w-full object-contain bg-muted"
-                          onError={() =>
-                            setRunImageError(
-                              "Could not display the output image. Click a link above to open it in a new tab."
-                            )
-                          }
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm font-medium text-foreground">
+                        <span>Output image (SaveImage)</span>
+                        <span className="text-xs text-muted-foreground">
+                          {outputImageSize
+                            ? `Size: ${outputImageSize.width}×${outputImageSize.height}`
+                            : runResult?.imageUrl
+                              ? "Size: loading..."
+                              : ""}
+                        </span>
+                      </div>
+                      <div className="overflow-hidden rounded border border-border/60 bg-card/40 h-[360px] flex items-center justify-center">
+                        {runResult?.imageUrl ? (
+                          <img
+                            src={runResult.proxyUrl || runResult.imageUrl || runResult.directUrl}
+                            alt="Workflow output"
+                            className="h-full w-full object-contain bg-muted"
+                            onLoad={(e) =>
+                              setOutputImageSize({
+                                width: e.currentTarget.naturalWidth,
+                                height: e.currentTarget.naturalHeight,
+                              })
+                            }
+                            onError={() =>
+                              setRunImageError(
+                                "Could not display the output image. Click a link above to open it in a new tab."
+                              )
+                            }
                         />
                       ) : (
                         <span className="text-xs text-muted-foreground px-3 text-center">

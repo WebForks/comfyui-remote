@@ -16,6 +16,7 @@ export type HistoryItem = {
   positivePrompt?: string;
   negativePrompt?: string;
   seed?: string | number;
+  steps?: string | number;
   inputFilename?: string;
 };
 
@@ -50,6 +51,7 @@ export async function saveImageToHistory(
     positivePrompt?: string;
     negativePrompt?: string;
     seed?: string | number;
+    steps?: string | number;
     inputFilename?: string;
   }
 ): Promise<HistoryItem> {
@@ -70,6 +72,7 @@ export async function saveImageToHistory(
     positivePrompt: opts?.positivePrompt,
     negativePrompt: opts?.negativePrompt,
     seed: opts?.seed,
+    steps: opts?.steps,
     inputFilename: opts?.inputFilename,
   };
 

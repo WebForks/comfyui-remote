@@ -17,6 +17,26 @@ type WorkflowGraph = Record<string, unknown> & {
   links?: unknown;
 };
 
+function setSteps(workflow: WorkflowGraph, steps: number) {
+  const nodes: WorkflowNode[] = Array.isArray(workflow?.nodes)
+    ? workflow.nodes
+    : [];
+
+  for (const node of nodes) {
+    const type = String(node?.type ?? "").toLowerCase();
+    if (type.includes("ksampler")) {
+      if (
+        Array.isArray(node.widgets_values) &&
+        node.widgets_values.length > 2
+      ) {
+        node.widgets_values[2] = steps;
+      } else {
+        node.widgets_values = [node.widgets_values?.[0] ?? 0, null, steps];
+      }
+    }
+  }
+}
+
 function stripIgnoredNodes(workflow: WorkflowGraph) {
   const nodes: WorkflowNode[] = Array.isArray(workflow?.nodes)
     ? workflow.nodes
@@ -621,6 +641,8 @@ export async function POST(req: NextRequest) {
     const imageFile = form.get("image") as File | null;
     const seedRaw = (form.get("seed") as string | null)?.trim();
     const seed = Number.isFinite(Number(seedRaw)) ? Number(seedRaw) : -1;
+    const stepsRaw = (form.get("steps") as string | null)?.trim();
+    const steps = Number.isFinite(Number(stepsRaw)) ? Number(stepsRaw) : undefined;
 
     const baseUrl = normalizeBaseUrl(baseUrlRaw);
 
@@ -663,6 +685,12 @@ export async function POST(req: NextRequest) {
     stripIgnoredNodes(workingCopy);
     setPromptTexts(workingCopy, positivePrompt, negativePrompt);
     setSeed(workingCopy, seed);
+    if (steps !== undefined) {
+      const stepsVal = Number.isFinite(steps) && steps > 0 ? steps : undefined;
+      if (stepsVal !== undefined) {
+        setSteps(workingCopy, stepsVal);
+      }
+    }
     setSaveImagePrefix(workingCopy, `remote_${runTag}`);
     ensureClassTypes(workingCopy);
     const promptGraph = buildPromptGraph(workingCopy);
@@ -715,8 +743,10 @@ export async function POST(req: NextRequest) {
       promptId,
       summary: summarizeWorkflow(workingCopy),
       usedSeed: seed,
+      usedSteps: steps,
       positivePrompt,
       negativePrompt,
+      workflowName: workflow.name,
       runTag,
     });
   } catch (error) {

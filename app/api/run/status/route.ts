@@ -150,6 +150,7 @@ export async function POST(req: NextRequest) {
         positivePrompt?: string;
         negativePrompt?: string;
         seed?: string | number;
+        steps?: string | number;
         inputFilename?: string;
         workflowName?: string;
       }
@@ -204,6 +205,7 @@ export async function POST(req: NextRequest) {
         positivePrompt: body?.positivePrompt,
         negativePrompt: body?.negativePrompt,
         seed: body?.seed,
+        steps: body?.steps,
         inputFilename: body?.inputFilename,
       });
     }
@@ -232,6 +234,7 @@ export async function POST(req: NextRequest) {
     proxyUrl,
     directUrl: finalUrl,
     usedSeed: body?.seed,
+    usedSteps: body?.steps,
     filename: image.filename,
     subfolder: image.subfolder,
     type: image.type,

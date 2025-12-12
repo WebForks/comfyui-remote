@@ -31,6 +31,7 @@ export default async function HistoryDetailPage({
     { label: "Workflow ID", value: item.workflowId },
     { label: "Prompt ID", value: item.promptId },
     { label: "Seed", value: item.seed !== undefined ? String(item.seed) : undefined },
+    { label: "Steps", value: item.steps !== undefined ? String(item.steps) : undefined },
     { label: "Output filename", value: item.originalFilename },
     { label: "Stored filename", value: item.storedFilename },
     { label: "Input file", value: item.inputFilename },
