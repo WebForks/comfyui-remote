@@ -7,7 +7,7 @@ export default async function SettingsPage() {
   const passwordConfigured = Boolean(process.env.APP_PASSWORD);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-background via-background/60 to-muted/30 text-foreground">
+    <main className="min-h-screen bg-linear-to-b from-background via-background/60 to-muted/30 text-foreground">
       <RemoteApp
         authenticated={authenticated}
         defaultBaseUrl={defaultBaseUrl}
@@ -17,4 +17,3 @@ export default async function SettingsPage() {
     </main>
   );
 }
-

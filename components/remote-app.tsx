@@ -382,12 +382,17 @@ function Dashboard({
   const [viewMode, setViewMode] = useState<"list" | "detail">("list");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>("");
+  const [testStatus, setTestStatus] = useState<"idle" | "ok" | "error">("idle");
+  const [testMessage, setTestMessage] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
 
   useEffect(() => {
     const savedBase = localStorage.getItem(STORAGE_KEYS.apiBase);
     const savedWorkflow = localStorage.getItem(STORAGE_KEYS.workflow);
     const savedTheme = localStorage.getItem("comfyui-theme");
     const savedDebug = localStorage.getItem("comfyui-show-debug");
+    const savedTestStatus = localStorage.getItem("comfyui-test-status");
+    const savedTestMessage = localStorage.getItem("comfyui-test-message");
 
     if (savedBase) {
       setApiBase(savedBase);
@@ -406,6 +411,10 @@ function Dashboard({
     }
 
     setShowDebug(savedDebug === "true");
+    if (savedTestStatus === "ok" || savedTestStatus === "error") {
+      setTestStatus(savedTestStatus);
+    }
+    if (savedTestMessage) setTestMessage(savedTestMessage);
 
     setReady(true);
   }, [defaultBaseUrl]);
@@ -423,6 +432,15 @@ function Dashboard({
   useEffect(() => {
     localStorage.setItem("comfyui-show-debug", showDebug ? "true" : "false");
   }, [showDebug]);
+
+  useEffect(() => {
+    localStorage.setItem("comfyui-test-status", testStatus);
+    if (testMessage) {
+      localStorage.setItem("comfyui-test-message", testMessage);
+    } else {
+      localStorage.removeItem("comfyui-test-message");
+    }
+  }, [testStatus, testMessage]);
 
   const connectionBadge = useMemo(() => {
     if (status === "connected") {
@@ -555,18 +573,8 @@ function Dashboard({
   }, [selectedWorkflowDetails]);
 
   useEffect(() => {
-    // Only reset when the workflow selection actually changes; avoid wiping output
-    // when we refresh summaries for the same workflow.
-    if (selectedWorkflow && lastWorkflowRef.current === selectedWorkflow) {
-      // Keep prompts in sync if they changed
-      if (positivePrompt !== derivedPrompts.positive) {
-        setPositivePrompt(derivedPrompts.positive);
-      }
-      if (negativePrompt !== derivedPrompts.negative) {
-        setNegativePrompt(derivedPrompts.negative);
-      }
-      return;
-    }
+    // Only reset when the workflow selection actually changes.
+    if (selectedWorkflow && lastWorkflowRef.current === selectedWorkflow) return;
 
     lastWorkflowRef.current = selectedWorkflow || null;
     setPositivePrompt(derivedPrompts.positive);
@@ -575,7 +583,7 @@ function Dashboard({
     setRunError(null);
     setRunImageError(null);
     setRunHistory(null);
-  }, [derivedPrompts, negativePrompt, positivePrompt, selectedWorkflow]);
+  }, [derivedPrompts, selectedWorkflow]);
 
   useEffect(() => {
     if (runImageFile) {
@@ -744,6 +752,39 @@ function Dashboard({
     (item) => item.id === selectedWorkflow,
   )?.path;
 
+  const handleTestConnection = useCallback(async () => {
+    if (!apiBase.trim()) {
+      setTestStatus("error");
+      setTestMessage("Enter a ComfyUI API URL first.");
+      return;
+    }
+
+    setIsTesting(true);
+    setTestMessage(null);
+
+    try {
+      const params = new URLSearchParams({ base: apiBase.trim() });
+      const response = await fetch(`/api/test?${params.toString()}`, {
+        method: "GET",
+      });
+      const body = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !body.ok) {
+        throw new Error(body.error || "Test failed");
+      }
+      setTestStatus("ok");
+      setTestMessage("Connected");
+    } catch (err) {
+      setTestStatus("error");
+      setTestMessage(
+        `Unable to connect: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      );
+    } finally {
+      setIsTesting(false);
+    }
+  }, [apiBase]);
+
   const handleRenameWorkflow = useCallback(
     async (id: string, name: string) => {
       if (!name.trim()) return;
@@ -906,8 +947,25 @@ function Dashboard({
                   >
                     {isFetching ? "Loading..." : "Reload saved"}
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleTestConnection}
+                    disabled={isTesting}
+                  >
+                    {isTesting ? "Testing..." : "Test"}
+                  </Button>
                 </div>
               </div>
+
+              {testStatus !== "idle" && (
+                <Alert variant={testStatus === "ok" ? "default" : "destructive"}>
+                  <AlertTitle>
+                    {testStatus === "ok" ? "Connected" : "Unable to connect"}
+                  </AlertTitle>
+                  <AlertDescription>{testMessage}</AlertDescription>
+                </Alert>
+              )}
 
               {error && (
                 <Alert variant="destructive">
