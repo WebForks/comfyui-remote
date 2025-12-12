@@ -10,18 +10,7 @@ import {
   type WorkflowNode,
 } from "@/lib/workflows";
 
-class NoImageFound extends Error {
-  history?: unknown;
-  fullHistory?: unknown;
-  constructor(message: string, history?: unknown, fullHistory?: unknown) {
-    super(message);
-    this.history = history;
-    this.fullHistory = fullHistory;
-  }
-}
-
 const MAX_POLL_MS = 600_000;
-const POLL_INTERVAL_MS = 1_500;
 
 type WorkflowGraph = Record<string, unknown> & {
   nodes?: WorkflowNode[];
@@ -555,92 +544,43 @@ function extractImageFromBody(body: unknown, promptId?: string): ImageEntry | nu
   return null;
 }
 
-type PollResult = {
-  imageUrl: string;
-  filename: string;
-  subfolder?: string;
-  type?: string;
-  promptId: string;
-  clientId: string;
-  history?: unknown;
-  fullHistory?: unknown;
-};
+async function findResultOnce(baseUrl: string, promptId: string) {
+  let historyById: Record<string, unknown> | null = null;
+  let fullHistory: Record<string, unknown> | null = null;
 
-async function pollForResult(
-  baseUrl: string,
-  promptId: string
-): Promise<PollResult> {
-  const start = Date.now();
-  let lastHistoryById: unknown = null;
-  let lastFullHistory: unknown = null;
-
-  while (Date.now() - start < MAX_POLL_MS) {
+  try {
     const res = await fetch(`${baseUrl}/history/${promptId}`, {
       cache: "no-store",
     });
-
     if (res.ok) {
-      const body = (await res.json().catch(() => null)) as
+      historyById = (await res.json().catch(() => null)) as
         | Record<string, unknown>
         | null;
-      if (body) {
-        lastHistoryById = body;
-        const image = extractImageFromBody(body, promptId);
-        if (image?.filename) {
-          return {
-            imageUrl: buildImageUrl(
-              baseUrl,
-              image.filename,
-              image.subfolder,
-              image.type
-            ),
-            filename: image.filename,
-            subfolder: image.subfolder,
-            type: image.type,
-            promptId,
-            clientId: "",
-            history: body,
-          };
-        }
+      const img = extractImageFromBody(historyById, promptId);
+      if (img?.filename) {
+        return { image: img, history: historyById, fullHistory: null };
       }
     }
-
-    const historyRes = await fetch(`${baseUrl}/history`, { cache: "no-store" });
-    if (historyRes.ok) {
-      const historyBody = (await historyRes.json().catch(() => null)) as
-        | Record<string, unknown>
-        | null;
-      if (historyBody) {
-        lastFullHistory = historyBody;
-        const image = extractImageFromBody(historyBody, promptId);
-        if (image?.filename) {
-          return {
-            imageUrl: buildImageUrl(
-              baseUrl,
-              image.filename,
-              image.subfolder,
-              image.type
-            ),
-            filename: image.filename,
-            subfolder: image.subfolder,
-            type: image.type,
-            promptId,
-            clientId: "",
-            history: lastHistoryById,
-            fullHistory: historyBody,
-          };
-        }
-      }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  } catch {
+    /* ignore */
   }
 
-  throw new NoImageFound(
-    "Timed out or no image found in history.",
-    lastHistoryById,
-    lastFullHistory
-  );
+  try {
+    const historyRes = await fetch(`${baseUrl}/history`, { cache: "no-store" });
+    if (historyRes.ok) {
+      fullHistory = (await historyRes.json().catch(() => null)) as
+        | Record<string, unknown>
+        | null;
+      const img = extractImageFromBody(fullHistory, promptId);
+      if (img?.filename) {
+        return { image: img, history: historyById, fullHistory };
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return { image: null, history: historyById, fullHistory };
 }
 
 export async function POST(req: NextRequest) {
@@ -746,53 +686,96 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await pollForResult(baseUrl, promptId);
-    // Best-effort: download and persist output for history
-    try {
-      const imageRes = await fetch(
-        buildImageUrl(baseUrl, result.filename, result.subfolder, result.type),
-        { cache: "no-store" }
-      );
-      if (imageRes.ok) {
-        const arrayBuf = await imageRes.arrayBuffer();
-        await saveImageToHistory(Buffer.from(arrayBuf), result.filename, {
-          promptId,
-          workflowId,
-        });
-      }
-    } catch {
-      /* ignore history save errors */
-    }
-    // Use a relative proxy URL so it works behind reverse proxies
-    const proxyParams = new URLSearchParams();
-    proxyParams.set("filename", result.filename);
-    if (result.subfolder) proxyParams.set("subfolder", result.subfolder);
-    if (result.type) proxyParams.set("type", result.type);
-    proxyParams.set("baseUrl", baseUrl);
-    proxyParams.set("token", getSessionToken());
-    const proxyUrl = `/api/image?${proxyParams.toString()}`;
-
     return NextResponse.json({
-      ...result,
-      proxyUrl: proxyUrl.toString(),
-      directUrl: result.imageUrl,
       clientId,
       workflowId,
+      promptId,
       summary: summarizeWorkflow(workingCopy),
     });
   } catch (error) {
-    if (error instanceof NoImageFound) {
-      return NextResponse.json(
-        {
-          error: error.message,
-          history: error.history,
-          fullHistory: error.fullHistory,
-        },
-        { status: 502 }
-      );
-    }
     const message =
       error instanceof Error ? error.message : "Failed to run workflow.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+export async function GET(req: NextRequest) {
+  if (!(await readIsAuthenticated())) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const promptId = req.nextUrl.searchParams.get("promptId") || "";
+  const baseUrlRaw = req.nextUrl.searchParams.get("baseUrl") || "";
+  const workflowId = req.nextUrl.searchParams.get("workflowId") || "";
+  const baseUrl = normalizeBaseUrl(baseUrlRaw);
+
+  if (!promptId || !baseUrl) {
+    return NextResponse.json(
+      { error: "Missing promptId or baseUrl" },
+      { status: 400 },
+    );
+  }
+
+  const startRaw = req.nextUrl.searchParams.get("start");
+  const startTime = startRaw ? Number(startRaw) : Date.now();
+  if (Date.now() - startTime > MAX_POLL_MS) {
+    return NextResponse.json(
+      { status: "timeout", error: "Timed out waiting for result" },
+      { status: 504 },
+    );
+  }
+
+  const { image, history, fullHistory } = await findResultOnce(
+    baseUrl,
+    promptId,
+  );
+  if (!image) {
+    return NextResponse.json({ status: "pending" });
+  }
+
+  // Best-effort: download and persist output for history
+  try {
+    const imageRes = await fetch(
+      buildImageUrl(baseUrl, image.filename, image.subfolder, image.type),
+      { cache: "no-store" },
+    );
+    if (imageRes.ok) {
+      const arrayBuf = await imageRes.arrayBuffer();
+      await saveImageToHistory(Buffer.from(arrayBuf), image.filename, {
+        promptId,
+        workflowId,
+      });
+    }
+  } catch {
+    /* ignore history save errors */
+  }
+
+  const proxyParams = new URLSearchParams();
+  proxyParams.set("filename", image.filename);
+  if (image.subfolder) proxyParams.set("subfolder", image.subfolder);
+  if (image.type) proxyParams.set("type", image.type);
+  proxyParams.set("baseUrl", baseUrl);
+  proxyParams.set("token", getSessionToken());
+  const proxyUrl = `/api/image?${proxyParams.toString()}`;
+
+  const finalUrl = buildImageUrl(
+    baseUrl,
+    image.filename,
+    image.subfolder,
+    image.type,
+  );
+
+  return NextResponse.json({
+    status: "done",
+    imageUrl: finalUrl,
+    proxyUrl,
+    directUrl: finalUrl,
+    filename: image.filename,
+    subfolder: image.subfolder,
+    type: image.type,
+    promptId,
+    workflowId,
+    history,
+    fullHistory,
+  });
 }

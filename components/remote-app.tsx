@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Download, Home, Moon, Settings, Sun } from "lucide-react";
+import { Download, Home, Moon, Settings, Sun, Dice5 } from "lucide-react";
 
 type RemoteAppProps = {
   authenticated: boolean;
@@ -371,8 +371,14 @@ function Dashboard({
   const [negativePrompt, setNegativePrompt] = useState("");
   const [runImageFile, setRunImageFile] = useState<File | null>(null);
   const [runImagePreview, setRunImagePreview] = useState<string | null>(null);
-  const [seedInput, setSeedInput] = useState("-1");
+  const randomSeed = useMemo(() => {
+    const min = 0;
+    const max = 9_999_999_999;
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }, []);
+  const [seedInput, setSeedInput] = useState(() => String(randomSeed));
   const [isRunning, setIsRunning] = useState(false);
+  const [pollingId, setPollingId] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [runImageError, setRunImageError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
@@ -386,6 +392,7 @@ function Dashboard({
   const [testStatus, setTestStatus] = useState<"idle" | "ok" | "error">("idle");
   const [testMessage, setTestMessage] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const savedBase = localStorage.getItem(STORAGE_KEYS.apiBase);
@@ -433,6 +440,14 @@ function Dashboard({
   useEffect(() => {
     localStorage.setItem("comfyui-show-debug", showDebug ? "true" : "false");
   }, [showDebug]);
+
+  useEffect(() => {
+    return () => {
+      if (pollTimer.current) {
+        clearTimeout(pollTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("comfyui-test-status", testStatus);
@@ -534,6 +549,95 @@ function Dashboard({
     localStorage.setItem(STORAGE_KEYS.workflow, value);
   }, []);
 
+  const stopPolling = useCallback(() => {
+    if (pollTimer.current) {
+      clearTimeout(pollTimer.current);
+      pollTimer.current = null;
+    }
+    setPollingId(null);
+    setIsRunning(false);
+  }, []);
+
+  const randomizeSeed = useCallback(() => {
+    const min = 0;
+    const max = 9_999_999_999;
+    const rand = Math.floor(Math.random() * (max - min + 1)) + min;
+    setSeedInput(String(rand));
+  }, []);
+
+  const pollStatus = useCallback(
+    async (promptId: string, workflowId: string, start: number) => {
+      try {
+        const params = new URLSearchParams({
+          promptId,
+          baseUrl: apiBase.trim(),
+          workflowId,
+          start: String(start),
+        });
+        const res = await fetch(`/api/run?${params.toString()}`, {
+          cache: "no-store",
+        });
+        const rawText = await res.text();
+        let body: {
+          status?: string;
+          error?: string;
+          imageUrl?: string;
+          proxyUrl?: string;
+          directUrl?: string;
+          filename?: string;
+          history?: unknown;
+          fullHistory?: unknown;
+        };
+        try {
+          body = JSON.parse(rawText) as typeof body;
+        } catch {
+          body = { error: rawText || "Received non-JSON response from server." };
+        }
+
+        if (!res.ok) {
+          throw new Error(body.error || `Status check failed (${res.status})`);
+        }
+
+        if (body.status === "pending") {
+          pollTimer.current = setTimeout(
+            () => pollStatus(promptId, workflowId, start),
+            2000,
+          );
+          return;
+        }
+
+        if (body.status === "timeout") {
+          throw new Error(body.error || "Timed out waiting for result.");
+        }
+
+        if (body.status === "done" && body.imageUrl) {
+          setRunResult({
+            imageUrl: body.imageUrl,
+            proxyUrl: body.proxyUrl,
+            directUrl: body.directUrl,
+            filename: body.filename || "",
+            subfolder: body.subfolder,
+            type: body.type,
+            promptId,
+            clientId: "",
+            history: body.history,
+            fullHistory: body.fullHistory,
+          });
+          setRunHistory(body.history || body.fullHistory || body);
+          setRunError(null);
+          stopPolling();
+          return;
+        }
+
+        throw new Error(body.error || "Unknown status response.");
+      } catch (err) {
+        setRunError(err instanceof Error ? err.message : "Workflow run failed.");
+        stopPolling();
+      }
+    },
+    [apiBase, stopPolling],
+  );
+
   const selectedWorkflowDetails = useMemo(
     () => workflows.find((item) => item.id === selectedWorkflow),
     [selectedWorkflow, workflows],
@@ -574,18 +678,40 @@ function Dashboard({
   }, [selectedWorkflowDetails]);
 
   useEffect(() => {
-    // Only reset when the workflow selection actually changes.
-    if (selectedWorkflow && lastWorkflowRef.current === selectedWorkflow) return;
+    if (!selectedWorkflow) return;
+    const hasChanged = lastWorkflowRef.current !== selectedWorkflow;
+    const shouldFillPositive =
+      !positivePrompt && derivedPrompts.positive.length > 0;
+    const shouldFillNegative =
+      !negativePrompt && derivedPrompts.negative.length > 0;
 
-    lastWorkflowRef.current = selectedWorkflow || null;
-    setPositivePrompt(derivedPrompts.positive);
-    setNegativePrompt(derivedPrompts.negative);
-    setSeedInput("-1");
-    setRunResult(null);
-    setRunError(null);
-    setRunImageError(null);
-    setRunHistory(null);
-  }, [derivedPrompts, selectedWorkflow]);
+    if (hasChanged) {
+      lastWorkflowRef.current = selectedWorkflow;
+      setPositivePrompt(derivedPrompts.positive);
+      setNegativePrompt(derivedPrompts.negative);
+      setSeedInput(String(randomSeed));
+      setRunResult(null);
+      setRunError(null);
+      setRunImageError(null);
+      setRunHistory(null);
+      return;
+    }
+
+    // If the workflow was already selected but summaries arrived later, backfill missing prompts.
+    if (shouldFillPositive) {
+      setPositivePrompt(derivedPrompts.positive);
+    }
+    if (shouldFillNegative) {
+      setNegativePrompt(derivedPrompts.negative);
+    }
+  }, [
+    derivedPrompts.negative,
+    derivedPrompts.positive,
+    negativePrompt,
+    positivePrompt,
+    selectedWorkflow,
+    randomSeed,
+  ]);
 
   useEffect(() => {
     if (runImageFile) {
@@ -664,6 +790,7 @@ function Dashboard({
   }, [importFile]);
 
   const handleRun = useCallback(async () => {
+    stopPolling();
     if (!selectedWorkflow) {
       setRunError("Select a workflow to run.");
       return;
@@ -679,6 +806,8 @@ function Dashboard({
     setRunImageError(null);
     setRunResult(null);
     setRunHistory(null);
+    setPollingId(null);
+    setIsRunning(true);
 
     try {
       const form = new FormData();
@@ -719,24 +848,13 @@ function Dashboard({
         throw new Error(body.error || "Workflow run failed.");
       }
 
-      if (!body.imageUrl) {
-        setRunHistory(body.history || body.fullHistory || body);
-        throw new Error("No image was returned from ComfyUI.");
+      if (!body.promptId) {
+        throw new Error(body.error || "ComfyUI did not return a prompt id.");
       }
 
-      setRunResult({
-        imageUrl: body.imageUrl,
-        filename: "",
-        subfolder: "",
-        type: "",
-        promptId: body.promptId || "",
-        clientId: body.clientId || "",
-        proxyUrl: body.proxyUrl,
-        directUrl: body.directUrl,
-        history: body.history,
-        fullHistory: body.fullHistory,
-      });
-      setRunHistory(body.history || body.fullHistory || body);
+      const startTime = Date.now();
+      setPollingId(body.promptId);
+      setIsRunning(true);
       if (body.summary) {
         setWorkflows((prev) =>
           prev.map((wf) =>
@@ -744,10 +862,15 @@ function Dashboard({
           ),
         );
       }
+      pollTimer.current = setTimeout(
+        () => pollStatus(body.promptId!, selectedWorkflow, startTime),
+        1000,
+      );
     } catch (err) {
       setRunError(err instanceof Error ? err.message : "Workflow run failed.");
-    } finally {
       setIsRunning(false);
+    } finally {
+      // isRunning is cleared when polling completes or errors
     }
   }, [
     apiBase,
@@ -755,6 +878,8 @@ function Dashboard({
     positivePrompt,
     runImageFile,
     selectedWorkflow,
+    pollStatus,
+    stopPolling,
   ]);
 
   const workflowHint = workflows.find(
@@ -1300,6 +1425,7 @@ function Dashboard({
                     <Select
                       value={selectedWorkflow}
                       onValueChange={(value) => {
+                        if (value === "__choose") return;
                         setSelectedWorkflow(value);
                         localStorage.setItem(STORAGE_KEYS.workflow, value);
                       }}
@@ -1329,14 +1455,27 @@ function Dashboard({
                     </Select>
                     <div className="space-y-1">
                       <Label htmlFor="seed">Seed</Label>
-                      <Input
-                        id="seed"
-                        value={seedInput}
-                        onChange={(e) => setSeedInput(e.target.value)}
-                        placeholder="-1 for random"
-                        inputMode="numeric"
-                        pattern="-?[0-9]*"
-                      />
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="seed"
+                          value={seedInput}
+                          onChange={(e) => setSeedInput(e.target.value)}
+                          placeholder="-1 for random"
+                          inputMode="numeric"
+                          pattern="-?[0-9]*"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="shrink-0"
+                          onClick={randomizeSeed}
+                          aria-label="Randomize seed"
+                          title="Randomize seed"
+                        >
+                          <Dice5 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                   {selectedWorkflowDetails?.summary && (
