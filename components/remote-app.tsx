@@ -371,6 +371,7 @@ function Dashboard({
   const [negativePrompt, setNegativePrompt] = useState("");
   const [runImageFile, setRunImageFile] = useState<File | null>(null);
   const [runImagePreview, setRunImagePreview] = useState<string | null>(null);
+  const [seedInput, setSeedInput] = useState("-1");
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [runImageError, setRunImageError] = useState<string | null>(null);
@@ -579,6 +580,7 @@ function Dashboard({
     lastWorkflowRef.current = selectedWorkflow || null;
     setPositivePrompt(derivedPrompts.positive);
     setNegativePrompt(derivedPrompts.negative);
+    setSeedInput("-1");
     setRunResult(null);
     setRunError(null);
     setRunImageError(null);
@@ -687,13 +689,15 @@ function Dashboard({
       if (runImageFile) {
         form.append("image", runImageFile);
       }
+      form.append("seed", seedInput || "-1");
 
       const response = await fetch("/api/run", {
         method: "POST",
         body: form,
       });
 
-      const body = (await response.json()) as {
+      const rawText = await response.text();
+      let body: {
         error?: string;
         imageUrl?: string;
         proxyUrl?: string;
@@ -704,6 +708,11 @@ function Dashboard({
         history?: unknown;
         fullHistory?: unknown;
       };
+      try {
+        body = JSON.parse(rawText) as typeof body;
+      } catch {
+        body = { error: rawText || "Received non-JSON response from server." };
+      }
 
       if (!response.ok) {
         setRunHistory(body.history || body.fullHistory || body);
@@ -1286,37 +1295,50 @@ function Dashboard({
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                <Label htmlFor="runWorkflow">Workflow to run</Label>
-                <Select
-                  value={selectedWorkflow}
-                  onValueChange={(value) => {
-                    setSelectedWorkflow(value);
-                      localStorage.setItem(STORAGE_KEYS.workflow, value);
-                    }}
-                    disabled={isFetching || workflows.length === 0}
-                  >
-                    <SelectTrigger
-                      id="runWorkflow"
-                      className="w-full"
-                      aria-label="Workflow to run"
-                      title="Workflow to run"
+                  <Label htmlFor="runWorkflow">Workflow to run</Label>
+                  <div className="grid gap-3 sm:grid-cols-[2fr_1fr] sm:items-end">
+                    <Select
+                      value={selectedWorkflow}
+                      onValueChange={(value) => {
+                        setSelectedWorkflow(value);
+                        localStorage.setItem(STORAGE_KEYS.workflow, value);
+                      }}
+                      disabled={isFetching || workflows.length === 0}
                     >
-                      <SelectValue
-                        placeholder={
-                          isFetching ? "Loading..." : "Select a saved workflow"
-                        }
+                      <SelectTrigger
+                        id="runWorkflow"
+                        className="w-full"
+                        aria-label="Workflow to run"
+                        title="Workflow to run"
+                      >
+                        <SelectValue
+                          placeholder={
+                            isFetching ? "Loading..." : "Select a saved workflow"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {workflows.map((flow) => (
+                            <SelectItem key={flow.id} value={flow.id}>
+                              {flow.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <div className="space-y-1">
+                      <Label htmlFor="seed">Seed</Label>
+                      <Input
+                        id="seed"
+                        value={seedInput}
+                        onChange={(e) => setSeedInput(e.target.value)}
+                        placeholder="-1 for random"
+                        inputMode="numeric"
+                        pattern="-?[0-9]*"
                       />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {workflows.map((flow) => (
-                          <SelectItem key={flow.id} value={flow.id}>
-                            {flow.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                    </div>
+                  </div>
                   {selectedWorkflowDetails?.summary && (
                     <div className="text-xs text-muted-foreground">
                       Type: {selectedWorkflowDetails.summary.workflowType} · Nodes:{" "}
@@ -1353,6 +1375,7 @@ function Dashboard({
                       id="runImage"
                       type="file"
                       accept="image/*"
+                      capture="environment"
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null;
                         setRunImageFile(file);

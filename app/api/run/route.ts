@@ -422,6 +422,23 @@ function setPromptTexts(
   }
 }
 
+function setSeed(workflow: WorkflowGraph, seed: number) {
+  const nodes: WorkflowNode[] = Array.isArray(workflow?.nodes)
+    ? workflow.nodes
+    : [];
+
+  for (const node of nodes) {
+    const type = String(node?.type ?? "").toLowerCase();
+    if (type.includes("ksampler")) {
+      if (Array.isArray(node.widgets_values) && node.widgets_values.length > 0) {
+        node.widgets_values[0] = seed;
+      } else {
+        node.widgets_values = [seed];
+      }
+    }
+  }
+}
+
 function setLoadImageFilename(workflow: WorkflowGraph, filename: string) {
   const nodes: WorkflowNode[] = Array.isArray(workflow?.nodes)
     ? workflow.nodes
@@ -641,6 +658,8 @@ export async function POST(req: NextRequest) {
     const positivePrompt = (form.get("positivePrompt") as string | null) ?? "";
     const negativePrompt = (form.get("negativePrompt") as string | null) ?? "";
     const imageFile = form.get("image") as File | null;
+    const seedRaw = (form.get("seed") as string | null)?.trim();
+    const seed = Number.isFinite(Number(seedRaw)) ? Number(seedRaw) : -1;
 
     const baseUrl = normalizeBaseUrl(baseUrlRaw);
 
@@ -681,6 +700,7 @@ export async function POST(req: NextRequest) {
 
     stripIgnoredNodes(workingCopy);
     setPromptTexts(workingCopy, positivePrompt, negativePrompt);
+    setSeed(workingCopy, seed);
     ensureClassTypes(workingCopy);
     const promptGraph = buildPromptGraph(workingCopy);
 
