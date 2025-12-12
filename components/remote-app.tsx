@@ -94,6 +94,8 @@ const initialAuthState: AuthState = { ok: false, message: "" };
 const STORAGE_KEYS = {
   apiBase: "comfyui-api-base",
   workflow: "comfyui-workflow",
+  promptPositive: "comfyui-positive",
+  promptNegative: "comfyui-negative",
 };
 
 export function RemoteApp({
@@ -400,12 +402,15 @@ function Dashboard({
   const negativeRef = useRef<string>("");
   const inputNameRef = useRef<string>("");
   const runTagRef = useRef<string>("");
+  const promptsLoadedRef = useRef(false);
 
   useEffect(() => {
     const savedBase = localStorage.getItem(STORAGE_KEYS.apiBase);
     const savedWorkflow = localStorage.getItem(STORAGE_KEYS.workflow);
     const savedTheme = localStorage.getItem("comfyui-theme");
     const savedDebug = localStorage.getItem("comfyui-show-debug");
+    const savedPos = localStorage.getItem(STORAGE_KEYS.promptPositive);
+    const savedNeg = localStorage.getItem(STORAGE_KEYS.promptNegative);
     const savedTestStatus = localStorage.getItem("comfyui-test-status");
     const savedTestMessage = localStorage.getItem("comfyui-test-message");
 
@@ -426,6 +431,9 @@ function Dashboard({
     }
 
     setShowDebug(savedDebug === "true");
+    if (savedPos) setPositivePrompt(savedPos);
+    if (savedNeg) setNegativePrompt(savedNeg);
+    if (savedPos || savedNeg) promptsLoadedRef.current = true;
     if (savedTestStatus === "ok" || savedTestStatus === "error") {
       setTestStatus(savedTestStatus);
     }
@@ -447,6 +455,14 @@ function Dashboard({
   useEffect(() => {
     localStorage.setItem("comfyui-show-debug", showDebug ? "true" : "false");
   }, [showDebug]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.promptPositive, positivePrompt);
+  }, [positivePrompt]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.promptNegative, negativePrompt);
+  }, [negativePrompt]);
 
   useEffect(() => {
     seedInputRef.current = seedInput;
@@ -710,6 +726,11 @@ function Dashboard({
       !negativePrompt && derivedPrompts.negative.length > 0;
 
     if (hasChanged) {
+      // On first load, if we already loaded prompts from storage, keep them.
+      if (!lastWorkflowRef.current && promptsLoadedRef.current) {
+        lastWorkflowRef.current = selectedWorkflow;
+        return;
+      }
       lastWorkflowRef.current = selectedWorkflow;
       setPositivePrompt(derivedPrompts.positive);
       setNegativePrompt(derivedPrompts.negative);
