@@ -651,6 +651,7 @@ function Dashboard({
           history?: unknown;
           fullHistory?: unknown;
           usedSeed?: string;
+          usedSteps?: string;
         };
         try {
           body = JSON.parse(rawText) as typeof body;
