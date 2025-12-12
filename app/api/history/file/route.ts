@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   }
 
   const filePath = getStoredFilePath(path.basename(filename));
+  const download = url.searchParams.get("download");
   try {
     const stats = await stat(filePath);
     if (!stats.isFile()) {
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
     status: 200,
     headers: {
       "Content-Type": "image/png",
+      ...(download ? { "Content-Disposition": `attachment; filename="${path.basename(filename)}"` } : {}),
       "Cache-Control": "private, max-age=3600",
     },
   });

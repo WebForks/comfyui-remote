@@ -24,6 +24,11 @@ type HistoryItem = {
   storedFilename: string;
   promptId?: string;
   workflowId?: string;
+  workflowName?: string;
+  positivePrompt?: string;
+  negativePrompt?: string;
+  seed?: string | number;
+  inputFilename?: string;
 };
 
 export function HistoryApp({ authenticated }: { authenticated: boolean }) {
@@ -157,28 +162,39 @@ export function HistoryApp({ authenticated }: { authenticated: boolean }) {
                   key={item.id}
                   className="flex flex-col gap-2 rounded border border-border/60 bg-card/40 p-3"
                 >
-                  <div className="overflow-hidden rounded border border-border/50 bg-muted/40 h-48 flex items-center justify-center">
+                  <Link
+                    href={`/history/${item.id}`}
+                    className="block overflow-hidden rounded border border-border/50 bg-muted/40 h-48"
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={imgUrl}
                       alt={item.originalFilename}
                       className="h-full w-full object-contain"
                     />
-                  </div>
+                  </Link>
                   <div className="space-y-1 text-xs text-muted-foreground">
-                    <p className="font-medium text-foreground">{item.originalFilename}</p>
+                    <Link
+                      href={`/history/${item.id}`}
+                      className="font-medium text-foreground hover:underline block"
+                    >
+                      {item.originalFilename}
+                    </Link>
                     <p>
                       Saved{" "}
                       {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
                     </p>
-                    {item.workflowId && <p>Workflow: {item.workflowId}</p>}
-                    {item.promptId && <p>Prompt: {item.promptId}</p>}
                   </div>
                   <div className="flex gap-2">
                     <Button asChild variant="secondary" size="sm" className="flex-1">
                       <a href={imgUrl} download={item.originalFilename}>
                         <Download className="h-4 w-4" />
                         Download
+                      </a>
+                    </Button>
+                    <Button asChild variant="outline" size="sm">
+                      <a href={imgUrl} target="_blank" rel="noreferrer">
+                        Open
                       </a>
                     </Button>
                     <Button

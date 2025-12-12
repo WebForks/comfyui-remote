@@ -448,6 +448,27 @@ function setLoadImageFilename(workflow: WorkflowGraph, filename: string) {
   }
 }
 
+function setSaveImagePrefix(workflow: WorkflowGraph, prefix: string) {
+  const nodes: WorkflowNode[] = Array.isArray(workflow?.nodes)
+    ? workflow.nodes
+    : [];
+
+  for (const node of nodes) {
+    const type = String(node?.type ?? "").toLowerCase();
+    if (type === "saveimage") {
+      if (Array.isArray(node.widgets_values) && node.widgets_values.length > 0) {
+        node.widgets_values[0] = prefix;
+      } else {
+        node.widgets_values = [prefix];
+      }
+      const asInputs = (node as { inputs?: Record<string, unknown> }).inputs;
+      if (asInputs && asInputs["filename_prefix"] === undefined) {
+        asInputs["filename_prefix"] = prefix;
+      }
+    }
+  }
+}
+
 async function uploadImage(
   baseUrl: string,
   file: File
@@ -630,6 +651,7 @@ export async function POST(req: NextRequest) {
     const workingCopy = structuredClone(
       workflow.raw ?? workflow
     ) as WorkflowGraph;
+    const runTag = randomUUID().slice(0, 8);
 
     if (imageFile) {
       const uploadedName = await uploadImage(baseUrl, imageFile);
@@ -641,6 +663,7 @@ export async function POST(req: NextRequest) {
     stripIgnoredNodes(workingCopy);
     setPromptTexts(workingCopy, positivePrompt, negativePrompt);
     setSeed(workingCopy, seed);
+    setSaveImagePrefix(workingCopy, `remote_${runTag}`);
     ensureClassTypes(workingCopy);
     const promptGraph = buildPromptGraph(workingCopy);
 
@@ -691,6 +714,10 @@ export async function POST(req: NextRequest) {
       workflowId,
       promptId,
       summary: summarizeWorkflow(workingCopy),
+      usedSeed: seed,
+      positivePrompt,
+      negativePrompt,
+      runTag,
     });
   } catch (error) {
     const message =

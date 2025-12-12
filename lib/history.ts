@@ -12,6 +12,11 @@ export type HistoryItem = {
   storedFilename: string;
   promptId?: string;
   workflowId?: string;
+  workflowName?: string;
+  positivePrompt?: string;
+  negativePrompt?: string;
+  seed?: string | number;
+  inputFilename?: string;
 };
 
 async function ensureDirs() {
@@ -38,7 +43,15 @@ async function persistHistory(items: HistoryItem[]) {
 export async function saveImageToHistory(
   buffer: Buffer,
   originalFilename: string,
-  opts?: { promptId?: string; workflowId?: string }
+  opts?: {
+    promptId?: string;
+    workflowId?: string;
+    workflowName?: string;
+    positivePrompt?: string;
+    negativePrompt?: string;
+    seed?: string | number;
+    inputFilename?: string;
+  }
 ): Promise<HistoryItem> {
   await ensureDirs();
   const id = randomUUID();
@@ -53,6 +66,11 @@ export async function saveImageToHistory(
     storedFilename,
     promptId: opts?.promptId,
     workflowId: opts?.workflowId,
+    workflowName: opts?.workflowName,
+    positivePrompt: opts?.positivePrompt,
+    negativePrompt: opts?.negativePrompt,
+    seed: opts?.seed,
+    inputFilename: opts?.inputFilename,
   };
 
   const history = await readHistory();

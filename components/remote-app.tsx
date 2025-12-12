@@ -78,10 +78,12 @@ type RunResult = {
   proxyUrl?: string;
   directUrl?: string;
   filename: string;
+  seedUsed?: string;
   subfolder?: string;
   type?: string;
   promptId: string;
   clientId: string;
+  workflowName?: string;
   history?: unknown;
   fullHistory?: unknown;
 };
@@ -378,7 +380,6 @@ function Dashboard({
   }, []);
   const [seedInput, setSeedInput] = useState(() => String(randomSeed));
   const [isRunning, setIsRunning] = useState(false);
-  const [pollingId, setPollingId] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [runImageError, setRunImageError] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
@@ -393,6 +394,12 @@ function Dashboard({
   const [testMessage, setTestMessage] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seedForRunRef = useRef<string>("");
+  const seedInputRef = useRef<string>(seedInput);
+  const positiveRef = useRef<string>("");
+  const negativeRef = useRef<string>("");
+  const inputNameRef = useRef<string>("");
+  const runTagRef = useRef<string>("");
 
   useEffect(() => {
     const savedBase = localStorage.getItem(STORAGE_KEYS.apiBase);
@@ -440,6 +447,10 @@ function Dashboard({
   useEffect(() => {
     localStorage.setItem("comfyui-show-debug", showDebug ? "true" : "false");
   }, [showDebug]);
+
+  useEffect(() => {
+    seedInputRef.current = seedInput;
+  }, [seedInput]);
 
   useEffect(() => {
     return () => {
@@ -554,7 +565,6 @@ function Dashboard({
       clearTimeout(pollTimer.current);
       pollTimer.current = null;
     }
-    setPollingId(null);
     setIsRunning(false);
   }, []);
 
@@ -565,17 +575,29 @@ function Dashboard({
     setSeedInput(String(rand));
   }, []);
 
+  const selectedWorkflowDetails = useMemo(
+    () => workflows.find((item) => item.id === selectedWorkflow),
+    [selectedWorkflow, workflows],
+  );
+
   const pollStatus = useCallback(
     async (promptId: string, workflowId: string, start: number) => {
       try {
-        const params = new URLSearchParams({
-          promptId,
-          baseUrl: apiBase.trim(),
-          workflowId,
-          start: String(start),
-        });
-        const res = await fetch(`/api/run?${params.toString()}`, {
-          cache: "no-store",
+        const res = await fetch(`/api/run/status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            promptId,
+            baseUrl: apiBase.trim(),
+            workflowId,
+            start,
+            positivePrompt: positiveRef.current,
+            negativePrompt: negativeRef.current,
+            seed: seedForRunRef.current,
+            inputFilename: inputNameRef.current,
+            workflowName: selectedWorkflowDetails?.name,
+            runTag: runTagRef.current,
+          }),
         });
         const rawText = await res.text();
         let body: {
@@ -587,8 +609,10 @@ function Dashboard({
           filename?: string;
           subfolder?: string;
           type?: string;
+          workflowName?: string;
           history?: unknown;
           fullHistory?: unknown;
+          usedSeed?: string;
         };
         try {
           body = JSON.parse(rawText) as typeof body;
@@ -622,11 +646,14 @@ function Dashboard({
             type: body.type || "",
             promptId,
             clientId: "",
+            seedUsed: body.usedSeed || seedForRunRef.current || undefined,
+            workflowName: body.workflowName || selectedWorkflowDetails?.name,
             history: body.history,
             fullHistory: body.fullHistory,
           });
           setRunHistory(body.history || body.fullHistory || body);
           setRunError(null);
+          randomizeSeed();
           stopPolling();
           return;
         }
@@ -637,12 +664,7 @@ function Dashboard({
         stopPolling();
       }
     },
-    [apiBase, stopPolling],
-  );
-
-  const selectedWorkflowDetails = useMemo(
-    () => workflows.find((item) => item.id === selectedWorkflow),
-    [selectedWorkflow, workflows],
+    [apiBase, stopPolling, selectedWorkflowDetails],
   );
 
   const derivedPrompts = useMemo(() => {
@@ -808,8 +830,12 @@ function Dashboard({
     setRunImageError(null);
     setRunResult(null);
     setRunHistory(null);
-    setPollingId(null);
     setIsRunning(true);
+    const seedToUse = (seedInputRef.current || "").trim() || "-1";
+    seedForRunRef.current = seedToUse;
+    positiveRef.current = positivePrompt;
+    negativeRef.current = negativePrompt;
+    inputNameRef.current = runImageFile?.name || "";
 
     try {
       const form = new FormData();
@@ -820,7 +846,7 @@ function Dashboard({
       if (runImageFile) {
         form.append("image", runImageFile);
       }
-      form.append("seed", seedInput || "-1");
+      form.append("seed", seedToUse);
 
       const response = await fetch("/api/run", {
         method: "POST",
@@ -838,6 +864,7 @@ function Dashboard({
         summary?: WorkflowSummary;
         history?: unknown;
         fullHistory?: unknown;
+        runTag?: string;
       };
       try {
         body = JSON.parse(rawText) as typeof body;
@@ -855,7 +882,7 @@ function Dashboard({
       }
 
       const startTime = Date.now();
-      setPollingId(body.promptId);
+      runTagRef.current = body.runTag || "";
       setIsRunning(true);
       if (body.summary) {
         setWorkflows((prev) =>
